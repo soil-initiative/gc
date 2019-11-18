@@ -7,314 +7,305 @@ See [overview](Overview.md) for background.
 
 ## Language
 
-Based on the following proposals:
 
-* [reference types](https://github.com/WebAssembly/reference-types), which introduces type `anyref` etc.
+### Schemes
 
-* [typed function references](https://github.com/WebAssembly/function-references), which introduces types `(ref $t)` and `(optref $t)` etc.
+Schemes are a new top-level component.
+Each scheme describes a memory layout that the garbage collector is responsible for collecting and the type-checker is responsible for reasoning about.
 
-* [type imports](https://github.com/WebAssembly/proposal-type-imports), which allows type definitionss to be imported and exported
+* `schemetype ::= scheme.new <parentattr>? <fieldattr>* <castattr>? <instantiationattr>? <nullabilityattr>? <equalityattr>?`
 
-All three proposals are prerequisites.
+We use `new` here to emphasize that, even though schemes are not actually created dynamically within an instance, two new schemes are never the same even if they have the same attributes.
+In particular, two module instances can only refer to the same scheme instance if one exports the scheme to the other (though we forgo details of exporting/importing schemes for now).
 
+#### Attributes
+
+Attributes describe memory invariants that a garbage collector needs to know about a scheme in order to determine how to best represent and implement operations on the scheme.
+
+* A parent attribute indicates what existing scheme that instances of this scheme must be compatible with. A scheme can have at most one parent attribute. The specified parent must be extensible.
+  - `parentattr ::= parent (implicit | explicit) <schemeidx>`
+    + An `implicit` parent means that references of this scheme are subtypes of references of its parent.
+    + An `explicit` parent means that references of this scheme must be explicitly converted into references of its parent. This is important for enabling schemes to be packed differently based on static type information, which has been found to improve performance in a number of languages. However, the design ensures that conversion and casting will never require duplicating contents on the heap.
+  - We use parent<sup>+</sup> to refer to parents and parents of parents and so on. We use parent<sup>\*</sup> to refer to parents<sup>+</sup> and this scheme. Likewise for child<sup>+</sup> and child<sup>*</sup>.
+  
+* A field attribute describes how an instance of the scheme can be accessed or mutated.
+  - `fieldattr ::= field (length|indexed|refine)? <fieldname> (<type>|<inttype>) readable? writeable? <mutationattr>?`
+    + Having a `length` field indicates that the scheme describes an array. There can be at most one `length` field, and it must have an `unsigned` type and be `immutable` or `constant`.
+    + An `indexed` field is one that must be accessed using a non-negative index that is strictly less than the (unsigned) value of the `length` field. A scheme can only have `indexed` fields if it has a `length` field.
+    + A scheme with a `refine` field must have a parent<sup>+</sup> scheme with a field of the same `<fieldname>`.
+    + The `<fieldname>` is used in place of an index so that child schemes can specify fields without knowing the full contents of their parents. The specific name has no run-time significance; it is effectively an abstract name for an unknown offset to be determined by the engine.
+  - `inttype ::= (signed | unsigned) <num-bits>` (where 0 < `<num-bits>` <= 64)
+    + The `signed | unsigned` qualifier informs the engine how the integer should be packed, when appropriate.
+  - `mutationattr ::= mutable | initializable | immutable` 
+    + `initializable` fields must have defaultable type and can only be changed from their default value.
+    + A `writeable` field must be either `mutable` or `initializable`.
+  - A `refine` field must satisfy the following properties with respect to every parent<sup>+</sup>'s field with the same name:
+    + If the parent<sup>+</sup>'s field is `readable`/`writeable`, then this field must be respectively `readable`/`writeable`.
+    + If this field is `readable`, then the parent<sup>+</sup>'s field must be of a supertype of this field.
+    + If this field is `writeable`, then the parent<sup>-</sup>`s field must be of a subtype of this field.
+    + If the parent<sup>+</sup>'s field has a mutation type, then this field must have same mutation type.
+  - If a parent<sup>+</sup> scheme has a `length` field, then every field of this scheme must be a `refine` field.
+
+* A cast attribute indicates whether this scheme can be cast to from its parent. A scheme can have at most one cast attribute.
+  - `castattr ::= castable`
+
+* An instantiation attribute indicates how instances of this scheme (as opposed to some child scheme) can be created. A scheme can have at most one construction attribute.
+  - `instantiationattr ::= constructible | extensible (explicit | flat | hierarchical | cases <schemeidx>*)?`
+    + `explicit` is a castable extensibility that requires all child schemes to be `explicit` children, but imposes no restriction on how those schemes might be instantiated. This enables the representation of this scheme to be determined independently of the representation of its child schemes, but at the cost of explicit conversion.
+    + `flat` is a castable extensibility that requires all `extensible` child<sup>+</sup> schemes to have `cases` extensibility, but ensures casts to child<sup>+</sup> schemes can be performed by an arithmetic range (or equality) check on an instance's run-time scheme identifier.
+      - It might be worthwhile to have a flag that indicates to provide very fast casts by fattening the pointer. Probably would have to impose significant restrictions on hierarchy.
+    + `hierarchical` is a castable extensibility that is permissive, but imposes some memory overhead to support constant-time downcasts to child<sup>+</sup> schemes via array-lookup.
+    + `cases` is a castable extensibility that requires all `castable` child<sup>+</sup> schemes to be a child<sup>\*</sup> of one the schemes in this list.
+      - It might be worthwhile to have a flag that indicates to pack the cases into the pointer itself.
+    + Question: should we make it possible to restrict the kind of fields children can have?
+
+* A nullability attribute indicates whether `nullref` is considered to be a subtype of this scheme. A scheme can have at most one nullability attribute.
+  - `nullabilityattr ::= nullable`
+  - If this scheme has a parent, that parent must be `nullable`.
+  - Question: Should we add an `explicit | implicit` indicator in case one just wants `null` to be expressible in the scheme but not necessarily require `nullref` to be a subtype of the scheme?
+
+* An equality attribute describes how instances of this scheme (and its children) can and should be compared. A scheme can have at most one equality attribute. This is important for packing instances, since packing necessarily strips identity information.
+  - `equalityattr ::= unequatable | equatable identity? deep?`
+    + A `constructible` and `equatable` scheme must indicate exactly one of `identity` and `deep`.
+    + A scheme with `deep` equality must have only `readable` and `immutable` fields (including parent<sup>+</sup> fields) with numeric types or reference types to schemes with `identity` equality.
+  - A parent of an `unequatable` scheme must be `unequatable`.
+  - A child of an `equatable` scheme must be `equatable`, can only indicate `identity` if the parent does, and can only indicate `deep` if the parent does.
 
 ### Types
 
 #### Value Types
 
-* `eqref` is a new reference type
-  - `reftype ::= ... | eqref`
+* `gcref $scheme` is a new type. A value of `gcref $scheme` is an instance of a child<sup>\*</sup> of `$scheme`. This value may or may not be stored on the heap depending on the packing scheme the engine chose to use for `gcref $scheme`, which may differ for `explicit` parents and children.
+  - `type ::= ... | gcref <schemeidx>`
 
-* `i31ref` is a new reference type
-  - `reftype ::= ... | i31ref`
+* `ngcref $scheme` is a new type that is valid iff `$scheme` is `nullable`. A value of `ngcref $scheme` is either a value of `gcref $scheme` or `nullref`.
+  - `type ::= ... | ngcref <schemeidx>`
+  - `ngcref $scheme ok` iff `$scheme` is `nullable`.
 
-* `rtt <typeuse>` is a new reference type that is a runtime representation of type `<typeuse>` (see [Runtime types](#runtime-types))
-  - `reftype ::= ... | rtt <typeuse>`
-  - `rtt t ok` iff `t ok`
-
-* Note: types `anyref` and `funcref` already exist via [reference types proposal](https://github.com/WebAssembly/reference-types), and `ref $t` and `optref $t` via [typed references](https://github.com/WebAssembly/function-references)
-
-
-#### Type Definitions
-
-* `deftype` is a new category of types that generalises the existing type definitions in the type section
-  - `deftype ::= <functype> | <structtype> | <arraytype>`
-  - `module ::= {..., types vec(<deftype>)}`
-
-* `structtype` describes a structure with statically indexed fields
-  - `structtype ::= struct <fieldtype>*`
-
-* `arraytype` describes an array with dynamically indexed fields
-  - `arraytype ::= array <fieldtype>`
-  - `<fieldtype> = mut <storagetype>`
-  - Note: in the MVP, all arrays must be defined as mutable
-
-* `fieldtype` describes a struct or array field and whether it is mutable
-  - `fieldtype ::= <mutability> <storagetype>`
-  - `storagetype ::= <valtype> | <packedtype>`
-  - `packedtype ::= i8 | i16`
-
-* Unpacking a storage type yields `i32` for packed types, otherwise the type itself
-  - `unpacked(t) = t`
-  - `unpacked(pt) = i32`
-
-
-#### Type Uses
-
-A *type use* denotes a user-defined or pre-defined data type:
-
-* `typeuse ::= <typeidx> | any | func | eq | i31 | rtt`
-
-* In the binary encoding,
-  - the `<typeidx>` is encoded as a (positive) signed LEB
-  - the others use the same (negative) opcodes as `anyref`, `funcref`, `eqref`, `i31ref`, `rtt`, respectively
+* `nullref` is a new type, though also in the Reference Types proposal. The unique value of `nullref` is `null`.
 
 
 #### Imports
 
-* `type <typetype>` is an import description with an upper bound
-  - `importdesc ::= ... | type <typetype>`
-  - Note: `type` may get additional parameters in the future
-
-* `typetype` describes the type of a type import, and is either an upper bound or a type equivalence
-  - `typetype ::= sub <typeuse> | eq <typeuse>`
-
-* Type imports have indices prepended to the type index space, similar to other imports.
-  - Note: due to bounds, type imports can be mutually recursive with other type imports as well as regular type definitions. Hence they have to be validated together with the type section.
-
+* To do in detail. The high-level idea is one can import a scheme with required attributes. Such attributes include `parent` attributes, which would enable one to import multiple schemes and demand that they are related.
 
 #### Exports
 
-* `type <typeidx>` is an export description
-  - `exportdesc ::= ... | type <typeidx>`
-  - `type $t ok` iff `$t` is defined in the context
-
+* To do in detail. The high-level idea is one can export a scheme with exposed attributes. Such attributes include `parent` attributes, which would enable one to export multiple schemes and reveal that they are related.
 
 #### Subtyping
 
-Greatest fixpoint (co-inductive interpretation) of the given rules (implying reflexivity and transitivity).
+In addition to reflexivity and transitivity:
 
-In addition to the rules for [basic](https://github.com/WebAssembly/reference-types/proposals/reference-types/Overview.md#subtyping), and [typed](https://github.com/WebAssembly/function-references/proposals/function-references/Overview.md#subtyping) reference types:
+* `gcref $scheme1` is a subtype of `gcref $scheme2` if `$scheme2` is an `implicit` parent of `$scheme1`.
+  - Note: there is no subtyping relation between a child and its `explicit` parent.
 
-* `eqref` is a subtype of `anyref`
-  - `eqref <: anyref`
-  - Note: `i31ref` and `funcref` are *not* a subtypes of `eqref`, i.e., those types do not expose reference equality
+* `ngcref $scheme1` is a subtype of `ngcref $scheme2` if `$scheme2` is an `implicit` parent of `$scheme1` (presuming both types are `ok`.
+  - Note: there is no subtyping relation between a child and its `explicit` parent.
 
-* `nullref` is a subtype of `eqref`
-  - `nullref <: eqref`
+* `gcref $scheme` is a subtype of `ngcref $scheme` (presuming the latter is `ok`)
 
-* `i31ref` is a subtype of `anyref`
-  - `i31ref <: anyref`
-  - Note: `i31ref` is *not* a supertype of `nullref`, i.e., nut nullable
-
-* Any optional reference type (and thereby respective concrete reference type) is a subtype of `eqref` if its not a function
-  - `optref $t <: eqref`
-     - if `$t = <structtype>` or `$t = <arraytype>`
-     - or `$t = type rt` and `rt <: eqref`
-  - TODO: provide a way to make data types non-eq, especially immutable ones
-
-* Concrete and optional reference types are covariant
-  - `ref $t1 <: ref $t2`
-     - iff `$t1 <: $t2`
-  - `optref $t1 <: optref $t2`
-     - iff `$t1 <: $t2`
-
-* Structure types support width and depth subtyping
-  - `struct <fieldtype1>* <fieldtype1'>* <: struct <fieldtype2>*`
-    - iff `(<fieldtype1> <: <fieldtype2>)*`
-
-* Array types support depth subtyping
-  - `array <fieldtype1> <: array <fieldtype2>`
-    - iff `<fieldtype1> <: <fieldtype2>`
-
-* Field types are covariant if they are immutable, invariant otherwise
-  - `const <valtype1> <: const <valtype2>`
-    - iff `<valtype1> <: <valtype2>`
-  - `var <valtype> <: var <valtype>`
-  - Note: mutable fields are *not* subtypes of immutable ones, so `const` really means constant, not read-only
-
-* `rtt t` is a subtype of `anyref`
-  - `rtt t <: anyref`
-  - Note: `rtt t1` is *not* a subtype of `rtt t2`, even if `t1` is a subtype of `t2`; such subtyping would be unsound, since RTTs are used in both co- and contravariant roles (e.g., both when constructing and consuming a reference)
+* `nullref` is a subtype of `ngcref $scheme` (presuming the latter is `ok`)
 
 
 ### Runtime
 
-#### Runtime Types
-
-* Runtime types (RTTs) are explicit values representing types at runtime; a value of type `rtt <t>` is a dynamic representative of static type `<t>`.
-
-* All RTTs are explicitly created and all operations involving dynamic type information (like casts) operate on explicit RTT operands.
-
-* There is a runtime subtyping hierarchy on RTTs; creating an RTT requires providing a *parent type* in the form of an existing RTT; the RTT for `anyref` is the root of this hierarchy.
-
-* An RTT t1 is a *sub-RTT* of another RTT t2 iff either of the following holds:
-  - t1 and t2 represent the same static type, or
-  - t1 has a parent that is a sub-RTT of t2.
-
-* Validation requires that each parent type is a representative of a static supertype of its child; runtime subtyping hence is a sub-relation of static subtyping (a graph with fewer nodes and edges).
-
-* At the same time, runtime subtyping forms a linear hierarchy such that the relation can be checked efficiently using standard implementation techniques (it is a tree-shaped graph).
-
 
 #### Values
 
-* Creating a structure or array optionally allows supplying a suitable RTT to represent its runtime type; it defaults to `anyref` if none is given.
+* In theory, values are all references to structures allocated on the heap with the appropriate data contents and run-time type information (RTTI). The order of fields in memory is suggested to be their order of declaration but might be rearranged for compaction purposes.
 
-* Each reference value has an associated runtime type:
-  - For structures or arrays, it is the RTT provided upon creation, or `anyref` if none.
-  - For `i31ref` references it is the RTT for `i31ref`.
-  - For `null` it is the RTT for `nullref`.
+* In practice, values are expected to be packed when possible. What gets packed will change as engines develop more advanced packing and garbage-collection techniques. At first, the expectation is that small `immutable` schemes with `deep` (or no) equality will be packed. Soon after, schemes with `cases` extension will have those cases encoded as the low bits of a (aligned) pointer. Eventually, some schemes will no longer need RTTI in the heap, enabling optimizations such as the headerless cons cells often seen in Lisp implementations (where the low bits of the pointer inform the garbage collector that the heap structure is specifically a cons cell).
 
-* The so-defined runtime type is the only type information that can be discovered about a reference value at runtime; a structure or array with RTT `anyref` thereby is fully opaque to runtime type checks (and an implementation may choose to optimize away its RTT).
+* A value is considered to be an instance of `$scheme` if it was constructed as some child<sup>\*</sup> scheme of `$scheme`.
 
 
 ### Instructions
 
+All of the typing rules are given under the assumption that WebAssembly truly has subtyping, which significantly reduces annotation burden and eliminates many redundant type-checks.
+
+
+#### Construction
+
+We choose `construct` rather than `new` to emphasize that the process might not actually allocate a new structure on the heap.
+In particular, the appropriate equality attribute might permit the structure to be packed in the pointer rather than allocated on the heap.
+
+In the following, `i32` corresponds to `signed` or `unsigned` fields of `32` bits or less, and `i64` corresponds to `signed` or `unsigned` fields of `64` bits or less.
+Question: what should happen when an `i32` or `i64` is inexpressible in field it is being assigned to?
+
+* `scheme.construct <schemeidx>` constructs an instance of `$scheme` and initializes its non-indexed fields with given values
+  - `scheme.construct $scheme : [t*] -> [(gcref $scheme)]`
+    - iff `$scheme` is `constructible`
+    - and `t*` corresponds to the non-indexed fields of `$scheme`
+    - and all indexed fields have defaultable types
+
+* `scheme.construct_indexed <schemeidx> <length>` constructs an instance of `$scheme` and initializes its fields with given values
+  - `scheme.construct_indexed $scheme n : [t*] -> [(gcref $scheme)]`
+    - iff `$scheme` is `constructible`
+    - and `$scheme` has a `length` field that can express `n`
+    - and `t*` corresponds to the non-length fields of `$scheme`
+
+* `scheme.construct_default <schemeidx> <fieldname>*` constructs an instance of `$scheme` and initializes all fields *not* in `$field*` with default values
+  - `scheme.construct_default $scheme : [t*] -> [(gcref $scheme)]`
+    - iff `$scheme` is `constructible`
+    - and `t*` corresponds to the fields in `$field*`
+    - and all fields not in `$field*` have defaultable types
+    - and, if a `length` field is in `$field*`, then no indexed fields are in `$field*`
+
+* `scheme.construct_copy <schemeidx> <fieldname>*` constructs an instance of `$scheme` using an instance of a `$source` scheme to initialize the `immutable` fields *not* in `$field*`
+  - `scheme.construct_source $scheme $field* : [(gcref $source) t*] -> [(gcref $scheme)]`
+    - iff `$scheme` is `constructible`
+    - and `t*` corresponds to the fields in `$field*` plus the non-immutable non-indexed fields of `$scheme`
+    - and `$source` is a parent<sup>\*</sup> of `$scheme`
+    - and every field in `$field*` is `immutable` and non-indexed in `$source`
+    - and every `immutable` field of `$scheme` not in `$field*` has a corresponding `readable` field in `$source` with an equivalent type
+    - and every indexed field of `$scheme` either has a defaultable type or is immutable and is in `$source` but not in `$field*` and the `length` field is in `$source` but not in `$field*`
+
+
+#### Accessors and Mutators
+
+* `gcref.get <fieldname>` reads from field `x` of an instance
+  - `gcref.get x : [(gcref $scheme)] -> [t]` and `: [(ngcref $scheme)] -> [t]`
+    - iff `$scheme` has non-indexed `readable` field with name `x` and type `t`
+  - traps on `null`
+
+* `gcref.get_<numbits> <fieldname>` reads from field `x` of an instance
+  - `gcref.get_nb x : [(gcref $scheme)] -> [inb]` and `: [(ngcref $scheme)] -> [inb]`
+    - iff `$scheme` has non-indexed `readable` field with name `x` and type `signed|unsigned nbx` with `nbx <= nb` and `nb` equal to `32` or `64`
+  - sign extends as indicated by `signed` or `unsigned` quality of field `x`
+  - traps on `null`
+
+* `gcref.set <fieldname>` writes to field `x` of an instance
+  - `gcref.set x : [(gcref $scheme) t] -> []` and `: [(ngcref $scheme) t] -> []`
+    - iff `$scheme` has non-indexed `writeable`and `mutable`  field with name `x` and type compatible with `t`
+  - traps if field `x` has `initializable` mutability and has already been initialized
+  - traps on `null`
+
+* `gcref.initialize <fieldname>` attempts to initialize field `x` of an instance and indicates whether the initialization succeeded (where failure indicates `x` is already initialized)
+  - `gcref.initialize x : [(gcref $scheme) t] -> [i32]` and `: [(ngcref $scheme) t] -> [i32]`
+    - iff `$scheme` has non-indexed `writeable` and `initializble` field with name `x` and type compatible with `t`
+  - traps on `null`
+
+
+#### Indexed Accessors and Mutators
+
+* `gcref.get_indexed <fieldname>` reads from field `x` of an instance
+  - `gcref.get x : [(gcref $scheme) ti] -> [t]` and `: [(ngcref $scheme) ti] -> [t]`
+    - iff `$scheme` has an indexed `readable` field with name `x` and type `t`
+    - and `ti` is compatible with `length` field of `$scheme`
+  - traps on `null` or if the dynamic index is out of bounds
+
+* `gcref.get_indexed_<numbits> <fieldname>` reads from field `x` of an instance
+  - `gcref.get_indexed_nb x : [(gcref $scheme) ti] -> [inb]` and `: [(ngcref $scheme) ti] -> [inb]`
+    - iff `$scheme` has an indexed `readable` field with name `x` and type `signed|unsigned nbx` with `nbx <= nb`
+    - and `ti` is compatible with `length` field of `$scheme`
+  - sign extends as indicated by `signed` or `unsigned` quality of field `x`
+  - traps on `null` or if the dynamic index is out of bounds
+
+* `gcref.set_indexed <fieldname>` writes to field `x` of an instance
+  - `gcref.set_indexed x : [(gcref $scheme) t ti] -> []` and `: [(ngcref $scheme) t ti] -> []`
+    - iff `$scheme` has an indexed `writeable` and `mutable` field with name `x` and type compatible with `t`
+    - and `ti` is compatible with `length` field of `$scheme`
+  - traps if field `x` has `initializable` mutability and has already been initialized
+  - traps on `null` or if the dynamic index is out of bounds
+
+* `gcref.initialize_indexed <fieldname>` attempts to initialize field `x` of an instance and indicates whether the initialization succeeded (where failure indicates `x` is already initialized)
+  - `gcref.initialize_indexed x : [(gcref $scheme) t ti] -> [i32]` and `: [(ngcref $scheme) t ti] -> [i32]`
+    - iff `$scheme` has indexed `writeable` and `initializable` field with name `x` and type compatible with `t`- 
+    - and `ti` is compatible with `length` field of `$scheme`
+  - returns 1 if the field `x` now forever has the value of the second operand, 0 otherwise
+  - traps on `null` or if the dynamic index is out of bounds
+
+
 #### Equality
 
-* `ref.eq` compares two references whose types support equality
-  - `ref.eq : [eqref eqref] -> [i32]`
+* `gcref.eq` compares two references whose scheme supports equality
+  - `gcref.eq : [(gcref $scheme) (gcref $scheme)] -> [i32]` where `$scheme` is `equatable`
 
+* `ngcref.eq` compares two possibly `null` references whose scheme supports equality, treating `null` as equal to itself
+  - `ngcref.eq : [(ngcref $scheme) (ngcref $scheme)] -> [i32]` where `$scheme` is `equatable`
 
-#### Functions
-
-Perhaps add the following short-hands:
-
-* `ref.is_func` checks whether a reference is a function
-  - `ref.is_func : [anyref] -> [i32]`
-  - equivalent to `(rtt.get funcref) (ref.test)`
-
-* `ref.as_func` converts to a function reference
-  - `ref.as_func : [anyref] -> [funcref]`
-  - traps if reference is not a function
-  - equivalent to `(rtt.get funcref) (ref.cast)`
-
-
-#### Structures
-
-* `struct.new <typeidx>` allocates a structure of type `$t` and initialises its fields with given values
-  - `struct.new $t : [t*] -> [(ref $t)]`
-    - iff `$t = struct (mut t)*`
-  - equivalent to `struct.new_sub $t (rtt.get anyref)`
-
-* `struct.new_sub <typeidx>` allocates a structure of type `$t` with RTT information determining its [runtime type](#values) and initialises its fields with given values
-  - `struct.new_sub $t : [(rtt t') t*] -> [(ref $t)]`
-    - iff `$t = struct (mut t)*`
-    - and `ref $t <: t'`
-
-* `struct.new_default <typeidx>` allocates a structure of type `$t` and initialises its fields with default values
-  - `struct.new_default $t : [] -> [(ref $t)]`
-    - iff `$t = struct (mut t)*`
-    - and all `t*` are defaultable
-
-* `struct.get_<sx>? <typeidx> <fieldidx>` reads field `$x` from a structure
-  - `struct.get_<sx>? $t i : [(optref $t)] -> [t]`
-    - iff `$t = struct (mut1 t1)^i (mut ti) (mut2 t2)*`
-    - and `t = unpacked(ti)`
-    - and `_<sx>` present iff `t =/= ti`
-  - traps on `null`
-
-* `struct.set <typeidx> <fieldidx>` writes field `$x` of a structure
-  - `struct.set $t i : [(optref $t) ti] -> []`
-    - iff `$t = struct (mut1 t1)^i (var ti) (mut2 t2)*`
-    - and `t = unpacked(ti)`
-  - traps on `null`
-
-
-#### Arrays
-
-* `array.new <typeidx>` allocates an array of type `$t` and initialises its fields with a given value
-  - `array.new $t : [t i32] -> [(ref $t)]`
-    - iff `$t = array (mut t)`
-  - equivalent to `array.new_sub $t (rtt.get anyref)`
-
-* `array.new_sub <typeidx> <typeuse>` allocates a array of type `$t` with RTT information determining its [runtime type](#values)
-  - `array.new_sub $t t' : [(rtt t') t i32] -> [(ref $t)]`
-    - iff `$t = array (mut t)`
-    - and `ref $t <: t'`
-
-* `array.new_default <typeidx>` allocates an array of type `$t` and initialises its fields with the default value
-  - `array.new_default $t : [i32] -> [(ref $t)]`
-    - iff `$t = array (mut t)`
-    - and `t` is defaultable
-
-* `array.get_<sx>? <typeidx>` reads an element from an array
-  - `array.get_<sx>? $t : [(optref $t) i32] -> [t]`
-    - iff `$t = array (mut t')`
-    - and `t = unpacked(t')`
-    - and `_<sx>` present iff `t =/= t'`
-  - traps on `null` or if the dynamic index is out of bounds
-
-* `array.set <typeidx>` writes an element to an array
-  - `array.set $t : [(optref $t) i32 t] -> []`
-    - iff `$t = array (var t')`
-    - and `t = unpacked(t')`
-  - traps on `null` or if the dynamic index is out of bounds
-
-* `array.len <typeidx>` inquires the length of an array
-  - `array.len $t : [(optref $t)] -> [i32]`
-    - iff `$t = array (mut t)`
-  - traps on `null`
-
-
-#### Unboxed Scalars
-
-Tentatively, support a type of guaranteed unboxed scalars.
-
-* `i31.new` creates an `i31ref` from a 32 bit value, truncating high bit
-  - `i31.new : [i32] -> [i31ref]`
-
-* `i31.get_u` extracts the value, zero-extending
-  - `i31.get_u : [i31ref] -> [i32]`
-
-* `i31.get_s` extracts the value, sign-extending
-  - `i31.get_s : [i31ref] -> [i32]`
-
-Perhaps also the following short-hands:
-
-* `ref.is_i31` checks whether a reference is an i31
-  - `ref.is_i31 : [anyref] -> [i32]`
-  - equivalent to `(rtt.get i31ref) (ref.test)`
-
-* `ref.as_i31` converts to an integer reference
-  - `ref.as_i31 : [anyref] -> [i31ref]`
-  - traps if reference is not an integer
-  - equivalent to `(rtt.get i31ref) (ref.cast)`
-
-
-#### Runtime Types
-
-* `rtt.get <typeuse>` returns the RTT of the specified type
-  - `rtt.get t : [] -> [(rtt t)]`
-  - multiple invocations of this instruction yield the same observable RTTs
-  - this is a *constant instruction*
-  - equivalent to `(rtt.sub t (rtt.get anyref))`, except when `t` itself is `anyref`
-
-* `rtt.sub <typeuse>` returns the RTT of the specified type as a sub-RTT of a given parent RTT operand
-  - `rtt.sub t : [(rtt t')] -> [(rtt t)]`
-    - iff `t <: t'`
-  - multiple invocations of this instruction with the same operand yield the same observable RTTs
-  - this is a *constant instruction*
+* `ngcref.eq_distinct` compares two possibly `null` references whose scheme supports equality, treating `null` as unequal to itself
+  - `ngcref.eq_distinct : [(ngcref $scheme) (ngcref $scheme)] -> [i32]` where `$scheme` is `equatable`
 
 
 #### Casts
 
-* `ref.test` tests whether a reference value's [runtime type](#values) is a [runtime subtype](#runtime) of a given RTT
-  - `ref.test : [t (rtt t')] -> [i32]`
-     - iff `t' <: t <: anyref`
-  - returns 1 if the first operand's runtime type is a sub-RTT of the RTT operand, 0 otherwise
+* `gcref.convert <schemeidx>` converts an instance to an instance of `$target`
+  - `gcref.convert $target : [gcref $source] -> [gcref $target]` and `: [ngcref $source] -> [ngcref $target]`
+    - iff `$target` is a parent<sup>\*</sup> of `$source`
 
-* `ref.cast` casts a reference value down to a type given by a RTT representation
-  - `ref.cast : [t (rtt t')] -> [t']`
-     - iff `t' <: t <: anyref`
-  - traps if the first operand's runtime type is not a sub-RTT of the RTT operand
+* `gcref.convert <schemeidx>` converts an instance to an instance of `$target`
+  - `gcref.convert $target : [gcref $source] -> [gcref $target]`
+    - iff `$target` is a parent<sup>\*</sup> of `$source`
 
-* `br_on_cast <labelidx>` branches if a value can be cast down to a given reference type
-  - `br_on_cast $l : [t (rtt t')] -> [t]`
-    - iff `t' <: t <: anyref`
-    - and `$l : [t']`
-  - branches iff the first operand's runtime type is a sub-RTT of the RTT operand
+* `gcref.test <schemeidx> (0|1)?` tests whether an instance is an instance of `$target`
+  - `gcref.test $target : [gcref $source] -> [i32]`
+    - iff `$target` is a `castable` child<sup>\*</sup> of `$source`
+    - and `$source` has a castable extensibility attribute
+  - `gcref.test $target n : [ngcref $source] -> [i32]`
+    - iff `$target` is a `castable` child<sup>\*</sup> of `$source`
+    - and `$source` has a castable extensibility attribute
+  - returns 1 if the operand is an instance of `$target`, `n` if the operand is `null`, 0 otherwise
+
+* `gcref.cast <schemeidx>` casts and converts an instance that was constructed as a child<sup>\*</sup> scheme of `$target`
+  - `gcref.cast $target : [gcref $source] -> [gcref $target]` and `: [ngcref $source] -> [gcref $target]`
+    - iff `$target` is a `castable` child<sup>\*</sup> of `$source`
+    - and `$source` has a castable extensibility attribute
+  - traps unless the operand is an instance of `$target`
+
+* `ngcref.cast_null <schemeidx>` casts and converts `null` or an instance that was constructed as a child<sup>\*</sup> scheme of `$target`
+  - `ngcref.cast_null $target : [ngcref $source] -> [ngcref $target]`
+    - iff `$target` is a `castable` child<sup>\*</sup> of `$source`
+    - and `$source` has a castable extensibility attribute
+  - traps unless the operand is `null` or an instance of `$target`
+
+* `gcref.br_or_cast <schemeidx> <labelidx> <labelidx>?` branches if an instance is an instance of `$target` (or if a value is `null`)?
+  - `gcref.br_or_cast $target $l : [gcref $source] -> [gcref $target]`
+    - iff `$target` is a `castable` child<sup>\*</sup> of `$source`
+    - and `$source` has a castable extensibility attribute
+    - and `$l : [gcref $source]`
+  - `gcref.br_or_cast $target $l : [ngcref $source] -> [ngcref $target]`
+    - iff `$target` is a `castable` child<sup>\*</sup> of `$source`
+    - and `$source` has a castable extensibility attribute
+    - and `$target` is `nullable`
+    - and `$l : [gcref $source]`
+  - `gcref.br_or_cast $target $l $lnull : [ngcref $source] -> [gcref $target]`
+    - iff `$target` is a `castable` child<sup>\*</sup> of `$source`
+    - and `$source` has a castable extensibility attribute
+    - and `$l : [gcref $source]`
+    - and `$lnull : [nullref]` (designed so that `$l` and `$lnull` can be same label of type `[ngcref $target]`)
+  - branches to `$l` iff the operand is an instance of `$target` or `$lnull` is omitted and the operand is `null`
+  - branches to `$lnull` iff `$lnull` is specified and the operand is `null`
+  - passes cast operand along with branch
+
+* `gcref.switch_cast <labelidx>? (<schemeidx> <labelidx>)*` branches to the label corresponding to the most precise scheme of an instance (or to `$lnull` if a value is `null`)?
+  - `gcref.switch_cast $target1 $l1 ... : [gcref $source] -> [gcref $source]`
+    - iff each `$targeti` is a `castable` child<sup>\*</sup> of `$source`
+    - and `$source` has a castable extensibility attribute
+    - and each `$li : [gcref $targeti]`
+    - and if any `$targeti` are `$targetj1` are potentially the same scheme then `i` equals `j`
+  - `gcref.switch_cast $target1 $l1 ... : [gcref $source] -> unreachable`
+    - iff each `$targeti` is a `castable` child<sup>\*</sup> of `$source`
+    - and `$source` has a castable extensibility attribute
+    - and each `$li : [gcref $targeti]`
+    - and if any `$targeti` are `$targetj1` are potentially the same scheme then `i` equals `j`
+    - and every `castable` child<sup>\*</sup> of `$source` is guaranteed to be a child<sup>\*</sup> of some `$targeti` due to `cases` extensibilities
+  - `gcref.switch_cast $lnull $target1 $l1 ... : [ngcref $source] -> [gcref $source]`
+    - iff each `$targeti` is a `castable` child<sup>\*</sup> of `$source`
+    - and `$source` has a castable extensibility attribute
+    - and each `$li : [gcref $targeti]`
+    - and if any `$targeti` are `$targetj1` are potentially the same scheme then `i` equals `j`
+    - and `$lnull : [nullref]`
+  - `gcref.switch_cast $lnull $target1 $l1 ... : [ngcref $source] -> unreachable`
+    - iff each `$targeti` is a `castable` child<sup>\*</sup> of `$source`
+    - and `$source` has a castable extensibility attribute
+    - and each `$li : [gcref $targeti]`
+    - and if any `$targeti` are `$targetj1` are potentially the same scheme then `i` equals `j`
+    - and every `castable` child<sup>\*</sup> of `$source` is guaranteed to be a child<sup>\*</sup> of some `$targetn` due to `cases` extensibilities
+    - and `$lnull : [nullref]`
+  - branches to `$li` iff the operand is an instance of `$targeti` and furthermore every `targetj` that the operand is an instance of is a parent<sup>\*</sup> of `$targeti`
+  - branches to `$lnull` iff `$lnull` is specified and the operand is `null`
   - passes cast operand along with branch
 
 
@@ -325,13 +316,4 @@ TODO.
 
 ## JS API
 
-See [GC JS API document](MVP-JS.md) .
-
-
-## Questions
-
-* Should RTT presence be made explicit in struct types and ref types?
-  - for example, `(struct rtt ...)` and `rttref <: anyref`
-  - only these types would be castable
-
-* Provide a way to make data types non-eq, especially immutable ones?
+See [GC JS API document](MVP-JS.md).

@@ -5,7 +5,9 @@
 This repository is a clone of [github.com/WebAssembly/spec/](https://github.com/WebAssembly/spec/).
 It is meant for discussion, prototype specification and implementation of a proposal to add garbage collection support to WebAssembly.
 
-See the [overview](proposals/gc/Overview.md) for a summary of the proposal.
+See the [overview](proposals/gc/Overview.md) for an informal summary of the proposal.
+See the [MVP](proposals/gc/MVP.md) for a (more) formal description of the proposal.
+See [NomOO](proposals/gc/NomOO.md) for an in-depth illustration of how a Java-like language would be supported by the proposal.
 
 Original `README` from upstream repository follows...
 
