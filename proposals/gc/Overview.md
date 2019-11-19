@@ -191,10 +191,10 @@ Other reference types are not defaultable.
 ### Reference Equality
 
 A scheme can define the notions of equality it supports.
-`deep` equality is used to enable packing instances of small schemes into the packed-pointer representation.
 `identity` equality is used to enable address comparison.
-A scheme can even support both notions of equality, with each child specifying its appropriate notion of equality.
-Regardless of which notion of equality is specified, equality can always be checked in constant time and often by just shallowly comparing the packed-pointer representations without requiring any loads from memory.
+`deep` equality is used to enable packing instances of small schemes into the packed-pointer representation.
+`case` equality is used to define equality case-wise according to its `cases`.
+In the common case, equality can be checked by just shallowly comparing the packed-pointer representations without requiring any loads from memory.
 
 
 ### Sharing

@@ -166,7 +166,7 @@ $String_vtable
               (field charAt (func (param (gcref $String) i32) (result i32))
                      readable immutable)
               ...
-              constructible
+              constructible unique
 ```
 
 The most important detail to observe is that the `vtable` field is *refined* to be a `gcref $String_vtable`, taking advantage of the covariance permitted by the fact that `vtable` is only `readable` and not `writeable`.
@@ -365,11 +365,11 @@ $Object
 := scheme.new
               (extensible (cases $primitive $reference))
               nullable
-              (equatable identity deep)
+              (equatable case)
 ```
 
 The above is the redesigned scheme for `$Object`.
-Note that it now indicates that it supports both `identity` and `deep` notions of equality, enabling child schemes to have their choice of which notion of equality works best for their needs.
+Note that it now indicates that its equality is defined `case`-wise, enabling child schemes to have their choice of which notion of equality works best for their needs.
 Note also that it no longer has a `vtable` field; this design instead supports method dispatch by case, utilizing the `cases` extensibility guarantee that every instance is either a `$primitive` (which itself is has a finite number of cases) or a `$reference`.
 So whenever `toString()` is invoked on a receiver of static type `Object` or unbounded type variable, this will translate to a switch on the primitive case types and the `$reference` scheme.
 The same goes for methods of the `Number` class and the `Comparable` interface, since primitive values inhabit those types.
@@ -380,7 +380,7 @@ $primitive
 := scheme.new (parent explicit $Object)
               castable
               (extensible (cases $boolean $char $byte $short $int $long $float $double))
-              (equatable deep)
+              (equatable case)
 $boolean
 := scheme.new (parent explicit $primitive)
               (field value (unsigned 1)
@@ -450,12 +450,12 @@ $Object
 := scheme.new
               (extensible (cases $primitive $nonprimitive))
               nullable
-              (equatable identity deep)
+              (equatable case)
 $nonprimitive
 := scheme.new (parent explicit $Object)
               (extensible (cases $Enum $reference))
               nullable
-              (equatable identity deep)
+              (equatable case)
 $Enum
 := scheme.new (parent explicit $nonprimitive)
               (field enum_class (unsigned 8)
@@ -469,7 +469,7 @@ $enum_itables
 := scheme.new
               (field (indexed 256) itable (ngcref $itable)
                      readable initializable)
-              constructible
+              constructible unique
 ```
 
 This redesign makes `$Object` have two cases: `$primitive` and `$nonprimitive`.

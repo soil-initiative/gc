@@ -18,6 +18,7 @@ Each scheme describes a memory layout that the garbage collector is responsible 
 We use `new` here to emphasize that, even though schemes are not actually created dynamically within an instance, two new schemes are never the same even if they have the same attributes.
 In particular, two module instances can only refer to the same scheme instance if one exports the scheme to the other (though we forgo details of exporting/importing schemes for now).
 
+
 #### Attributes
 
 Attributes describe memory invariants that a garbage collector needs to know about a scheme in order to determine how to best represent and implement operations on the scheme.
@@ -50,7 +51,8 @@ Attributes describe memory invariants that a garbage collector needs to know abo
   - `castattr ::= castable`
 
 * An instantiation attribute indicates how instances of this scheme (as opposed to some child scheme) can be created. A scheme can have at most one construction attribute.
-  - `instantiationattr ::= constructible | extensible (explicit | flat | hierarchical | cases <schemeidx>*)?`
+  - `instantiationattr ::= constructible unique? | extensible (explicit | flat | hierarchical | cases <schemeidx>*)?`
+    + A `unique` constructible scheme has at most one instance ever constructed. This can enable the unqiue instance to be packed even if it has `identity` equality.
     + `explicit` is a castable extensibility that requires all child schemes to be `explicit` children, but imposes no restriction on how those schemes might be instantiated. This enables the representation of this scheme to be determined independently of the representation of its child schemes, but at the cost of explicit conversion.
     + `flat` is a castable extensibility that requires all `extensible` child<sup>+</sup> schemes to have `cases` extensibility, but ensures casts to child<sup>+</sup> schemes can be performed by an arithmetic range (or equality) check on an instance's run-time scheme identifier.
       - It might be worthwhile to have a flag that indicates to provide very fast casts by fattening the pointer. Probably would have to impose significant restrictions on hierarchy.
@@ -65,11 +67,15 @@ Attributes describe memory invariants that a garbage collector needs to know abo
   - Question: Should we add an `explicit | implicit` indicator in case one just wants `null` to be expressible in the scheme but not necessarily require `nullref` to be a subtype of the scheme?
 
 * An equality attribute describes how instances of this scheme (and its children) can and should be compared. A scheme can have at most one equality attribute. This is important for packing instances, since packing necessarily strips identity information.
-  - `equalityattr ::= unequatable | equatable identity? deep?`
-    + A `constructible` and `equatable` scheme must indicate exactly one of `identity` and `deep`.
-    + A scheme with `deep` equality must have only `readable` and `immutable` fields (including parent<sup>+</sup> fields) with numeric types or reference types to schemes with `identity` equality.
+  - `equalityattr ::= unequatable | equatable (identity | deep | case)`
+    + A `constructible` and `equatable` scheme must specify `identity | deep | case`.
+    + A scheme with `deep` equality must be `constructible` and have only `readable` and `immutable` fields (including parent<sup>+</sup> fields) whose types all have a notion of equality.
+    + A scheme with `case` equality must have `cases` extensibility.
   - A parent of an `unequatable` scheme must be `unequatable`.
-  - A child of an `equatable` scheme must be `equatable`, can only indicate `identity` if the parent does, and can only indicate `deep` if the parent does.
+  - A child of an `equatable` scheme must be `equatable`.
+    + If the parent has `identity` equality, so must the child.
+  - Equality-dependence must be well-founded. A scheme with `identity` equality has no equality-dependences. A scheme with `deep` equality has equality-dependence on the schemes occurring in its fields' types. A scheme with `case` equality has equality-dependence on its `cases` schemes.
+
 
 ### Types
 
@@ -89,9 +95,11 @@ Attributes describe memory invariants that a garbage collector needs to know abo
 
 * To do in detail. The high-level idea is one can import a scheme with required attributes. Such attributes include `parent` attributes, which would enable one to import multiple schemes and demand that they are related.
 
+
 #### Exports
 
 * To do in detail. The high-level idea is one can export a scheme with exposed attributes. Such attributes include `parent` attributes, which would enable one to export multiple schemes and reveal that they are related.
+
 
 #### Subtyping
 
@@ -138,12 +146,14 @@ Question: what should happen when an `i32` or `i64` is inexpressible in field it
     - iff `$scheme` is `constructible`
     - and `t*` corresponds to the non-indexed fields of `$scheme`
     - and all indexed fields have defaultable types
+  - traps if an instance of `$scheme` has already been constructed
 
 * `scheme.construct_indexed <schemeidx> <length>` constructs an instance of `$scheme` and initializes its fields with given values
   - `scheme.construct_indexed $scheme n : [t*] -> [(gcref $scheme)]`
     - iff `$scheme` is `constructible`
     - and `$scheme` has a `length` field that can express `n`
     - and `t*` corresponds to the non-length fields of `$scheme`
+  - traps if an instance of `$scheme` has already been constructed
 
 * `scheme.construct_default <schemeidx> <fieldname>*` constructs an instance of `$scheme` and initializes all fields *not* in `$field*` with default values
   - `scheme.construct_default $scheme : [t*] -> [(gcref $scheme)]`
@@ -151,6 +161,7 @@ Question: what should happen when an `i32` or `i64` is inexpressible in field it
     - and `t*` corresponds to the fields in `$field*`
     - and all fields not in `$field*` have defaultable types
     - and, if a `length` field is in `$field*`, then no indexed fields are in `$field*`
+  - traps if an instance of `$scheme` has already been constructed
 
 * `scheme.construct_copy <schemeidx> <fieldname>*` constructs an instance of `$scheme` using an instance of a `$source` scheme to initialize the `immutable` fields *not* in `$field*`
   - `scheme.construct_source $scheme $field* : [(gcref $source) t*] -> [(gcref $scheme)]`
@@ -160,6 +171,7 @@ Question: what should happen when an `i32` or `i64` is inexpressible in field it
     - and every field in `$field*` is `immutable` and non-indexed in `$source`
     - and every `immutable` field of `$scheme` not in `$field*` has a corresponding `readable` field in `$source` with an equivalent type
     - and every indexed field of `$scheme` either has a defaultable type or is immutable and is in `$source` but not in `$field*` and the `length` field is in `$source` but not in `$field*`
+  - traps if an instance of `$scheme` has already been constructed
 
 
 #### Accessors and Mutators
