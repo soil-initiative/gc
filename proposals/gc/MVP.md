@@ -61,10 +61,9 @@ Attributes describe memory invariants that a garbage collector needs to know abo
       - It might be worthwhile to have a flag that indicates to pack the cases into the pointer itself.
     + Question: should we make it possible to restrict the kind of fields children can have?
 
-* A nullability attribute indicates whether `nullref` is considered to be a subtype of this scheme. A scheme can have at most one nullability attribute.
+* A nullability attribute indicates whether `null` is considered to be a value of this scheme. A scheme can have at most one nullability attribute.
   - `nullabilityattr ::= nullable`
   - If this scheme has a parent, that parent must be `nullable`.
-  - Question: Should we add an `explicit | implicit` indicator in case one just wants `null` to be expressible in the scheme but not necessarily require `nullref` to be a subtype of the scheme?
 
 * An equality attribute describes how instances of this scheme (and its children) can and should be compared. A scheme can have at most one equality attribute. This is important for packing instances, since packing necessarily strips identity information.
   - `equalityattr ::= unequatable | equatable (identity | deep | case)`
@@ -84,11 +83,11 @@ Attributes describe memory invariants that a garbage collector needs to know abo
 * `gcref $scheme` is a new type. A value of `gcref $scheme` is an instance of a child<sup>\*</sup> of `$scheme`. This value may or may not be stored on the heap depending on the packing scheme the engine chose to use for `gcref $scheme`, which may differ for `explicit` parents and children.
   - `type ::= ... | gcref <schemeidx>`
 
-* `ngcref $scheme` is a new type that is valid iff `$scheme` is `nullable`. A value of `ngcref $scheme` is either a value of `gcref $scheme` or `nullref`.
-  - `type ::= ... | ngcref <schemeidx>`
-  - `ngcref $scheme ok` iff `$scheme` is `nullable`.
+* `gcnref $scheme` is a new type that is valid iff `$scheme` is `nullable`. A value of `gcnref $scheme` is either an instance of `gcref $scheme` or `null`.
+  - `type ::= ... | gcnref <schemeidx>`
+  - `gcnref $scheme ok` iff `$scheme` is `nullable`.
 
-* `nullref` is a new type, though also in the Reference Types proposal. The unique value of `nullref` is `null`.
+* `gcnull $scheme` is a new type that is valid iff `$scheme` is `nullable`. The unique value of `gcnull $scheme` is `null`.
 
 
 #### Imports
@@ -105,15 +104,17 @@ Attributes describe memory invariants that a garbage collector needs to know abo
 
 In addition to reflexivity and transitivity:
 
-* `gcref $scheme1` is a subtype of `gcref $scheme2` if `$scheme2` is an `implicit` parent of `$scheme1`.
+* `gcref $scheme1` is a subtype of `gcref $scheme2` if `$scheme2` is an `implicit` parent of `$scheme1`..
   - Note: there is no subtyping relation between a child and its `explicit` parent.
 
-* `ngcref $scheme1` is a subtype of `ngcref $scheme2` if `$scheme2` is an `implicit` parent of `$scheme1` (presuming both types are `ok`.
+* `gcnref $scheme1` is a subtype of `gcnref $scheme2` if `$scheme2` is an `implicit` parent of `$scheme1` (presuming both `$scheme1` and `$scheme2` are `nullable`).
   - Note: there is no subtyping relation between a child and its `explicit` parent.
 
-* `gcref $scheme` is a subtype of `ngcref $scheme` (presuming the latter is `ok`)
+* `gcref $scheme` is a subtype of `gcnref $scheme` (presuming `$scheme` is `nullable`).
 
-* `nullref` is a subtype of `ngcref $scheme` (presuming the latter is `ok`)
+* `gcnull $scheme` is a subtype of `gcnref $scheme` (presuming `$scheme` is `nullable`).
+
+* `gcnull $scheme1` is a subtype of `gcnull $scheme2` if `$scheme2` is an `implicit` parent or child of `$scheme1` (presuming both `$scheme1` and `$scheme2` are `nullable`).
 
 
 ### Runtime
@@ -173,28 +174,32 @@ Question: what should happen when an `i32` or `i64` is inexpressible in field it
     - and every indexed field of `$scheme` either has a defaultable type or is immutable and is in `$source` but not in `$field*` and the `length` field is in `$source` but not in `$field*`
   - traps if an instance of `$scheme` has already been constructed
 
+* `scheme.null <schemeidx>` produces `$scheme`'s representation of the `null` value.
+  - `scheme.null $source : [] -> [(gcnull $scheme)]`
+    - iff `$scheme` is `nullable`
+
 
 #### Accessors and Mutators
 
 * `gcref.get <fieldname>` reads from field `x` of an instance
-  - `gcref.get x : [(gcref $scheme)] -> [t]` and `: [(ngcref $scheme)] -> [t]`
+  - `gcref.get x : [(gcref $scheme)] -> [t]` and `: [(gcnref $scheme)] -> [t]`
     - iff `$scheme` has non-indexed `readable` field with name `x` and type `t`
   - traps on `null`
 
 * `gcref.get_<numbits> <fieldname>` reads from field `x` of an instance
-  - `gcref.get_nb x : [(gcref $scheme)] -> [inb]` and `: [(ngcref $scheme)] -> [inb]`
+  - `gcref.get_nb x : [(gcref $scheme)] -> [inb]` and `: [(gcnref $scheme)] -> [inb]`
     - iff `$scheme` has non-indexed `readable` field with name `x` and type `signed|unsigned nbx` with `nbx <= nb` and `nb` equal to `32` or `64`
   - sign extends as indicated by `signed` or `unsigned` quality of field `x`
   - traps on `null`
 
 * `gcref.set <fieldname>` writes to field `x` of an instance
-  - `gcref.set x : [(gcref $scheme) t] -> []` and `: [(ngcref $scheme) t] -> []`
+  - `gcref.set x : [(gcref $scheme) t] -> []` and `: [(gcnref $scheme) t] -> []`
     - iff `$scheme` has non-indexed `writeable`and `mutable`  field with name `x` and type compatible with `t`
   - traps if field `x` has `initializable` mutability and has already been initialized
   - traps on `null`
 
 * `gcref.initialize <fieldname>` attempts to initialize field `x` of an instance and indicates whether the initialization succeeded (where failure indicates `x` is already initialized)
-  - `gcref.initialize x : [(gcref $scheme) t] -> [i32]` and `: [(ngcref $scheme) t] -> [i32]`
+  - `gcref.initialize x : [(gcref $scheme) t] -> [i32]` and `: [(gcnref $scheme) t] -> [i32]`
     - iff `$scheme` has non-indexed `writeable` and `initializble` field with name `x` and type compatible with `t`
   - traps on `null`
 
@@ -202,27 +207,27 @@ Question: what should happen when an `i32` or `i64` is inexpressible in field it
 #### Indexed Accessors and Mutators
 
 * `gcref.get_indexed <fieldname>` reads from field `x` of an instance
-  - `gcref.get x : [(gcref $scheme) ti] -> [t]` and `: [(ngcref $scheme) ti] -> [t]`
+  - `gcref.get x : [(gcref $scheme) ti] -> [t]` and `: [(gcnref $scheme) ti] -> [t]`
     - iff `$scheme` has an indexed `readable` field with name `x` and type `t`
     - and `ti` is compatible with `length` field of `$scheme`
   - traps on `null` or if the dynamic index is out of bounds
 
 * `gcref.get_indexed_<numbits> <fieldname>` reads from field `x` of an instance
-  - `gcref.get_indexed_nb x : [(gcref $scheme) ti] -> [inb]` and `: [(ngcref $scheme) ti] -> [inb]`
+  - `gcref.get_indexed_nb x : [(gcref $scheme) ti] -> [inb]` and `: [(gcnref $scheme) ti] -> [inb]`
     - iff `$scheme` has an indexed `readable` field with name `x` and type `signed|unsigned nbx` with `nbx <= nb`
     - and `ti` is compatible with `length` field of `$scheme`
   - sign extends as indicated by `signed` or `unsigned` quality of field `x`
   - traps on `null` or if the dynamic index is out of bounds
 
 * `gcref.set_indexed <fieldname>` writes to field `x` of an instance
-  - `gcref.set_indexed x : [(gcref $scheme) t ti] -> []` and `: [(ngcref $scheme) t ti] -> []`
+  - `gcref.set_indexed x : [(gcref $scheme) t ti] -> []` and `: [(gcnref $scheme) t ti] -> []`
     - iff `$scheme` has an indexed `writeable` and `mutable` field with name `x` and type compatible with `t`
     - and `ti` is compatible with `length` field of `$scheme`
   - traps if field `x` has `initializable` mutability and has already been initialized
   - traps on `null` or if the dynamic index is out of bounds
 
 * `gcref.initialize_indexed <fieldname>` attempts to initialize field `x` of an instance and indicates whether the initialization succeeded (where failure indicates `x` is already initialized)
-  - `gcref.initialize_indexed x : [(gcref $scheme) t ti] -> [i32]` and `: [(ngcref $scheme) t ti] -> [i32]`
+  - `gcref.initialize_indexed x : [(gcref $scheme) t ti] -> [i32]` and `: [(gcnref $scheme) t ti] -> [i32]`
     - iff `$scheme` has indexed `writeable` and `initializable` field with name `x` and type compatible with `t`- 
     - and `ti` is compatible with `length` field of `$scheme`
   - returns 1 if the field `x` now forever has the value of the second operand, 0 otherwise
@@ -234,17 +239,17 @@ Question: what should happen when an `i32` or `i64` is inexpressible in field it
 * `gcref.eq` compares two references whose scheme supports equality
   - `gcref.eq : [(gcref $scheme) (gcref $scheme)] -> [i32]` where `$scheme` is `equatable`
 
-* `ngcref.eq` compares two possibly `null` references whose scheme supports equality, treating `null` as equal to itself
-  - `ngcref.eq : [(ngcref $scheme) (ngcref $scheme)] -> [i32]` where `$scheme` is `equatable`
+* `gcnref.eq` compares two possibly `null` references whose scheme supports equality, treating `null` as equal to itself
+  - `gcnref.eq : [(gcnref $scheme) (gcnref $scheme)] -> [i32]` where `$scheme` is `equatable`
 
-* `ngcref.eq_distinct` compares two possibly `null` references whose scheme supports equality, treating `null` as unequal to itself
-  - `ngcref.eq_distinct : [(ngcref $scheme) (ngcref $scheme)] -> [i32]` where `$scheme` is `equatable`
+* `gcnref.eq_distinct` compares two possibly `null` references whose scheme supports equality, treating `null` as unequal to itself
+  - `gcnref.eq_distinct : [(gcnref $scheme) (gcnref $scheme)] -> [i32]` where `$scheme` is `equatable`
 
 
 #### Casts
 
 * `gcref.convert <schemeidx>` converts an instance to an instance of `$target`
-  - `gcref.convert $target : [gcref $source] -> [gcref $target]` and `: [ngcref $source] -> [ngcref $target]`
+  - `gcref.convert $target : [gcref $source] -> [gcref $target]` and `: [gcnref $source] -> [gcnref $target]`
     - iff `$target` is a parent<sup>\*</sup> of `$source`
 
 * `gcref.convert <schemeidx>` converts an instance to an instance of `$target`
@@ -255,19 +260,19 @@ Question: what should happen when an `i32` or `i64` is inexpressible in field it
   - `gcref.test $target : [gcref $source] -> [i32]`
     - iff `$target` is a `castable` child<sup>\*</sup> of `$source`
     - and `$source` has a castable extensibility attribute
-  - `gcref.test $target n : [ngcref $source] -> [i32]`
+  - `gcref.test $target n : [gcnref $source] -> [i32]`
     - iff `$target` is a `castable` child<sup>\*</sup> of `$source`
     - and `$source` has a castable extensibility attribute
   - returns 1 if the operand is an instance of `$target`, `n` if the operand is `null`, 0 otherwise
 
 * `gcref.cast <schemeidx>` casts and converts an instance that was constructed as a child<sup>\*</sup> scheme of `$target`
-  - `gcref.cast $target : [gcref $source] -> [gcref $target]` and `: [ngcref $source] -> [gcref $target]`
+  - `gcref.cast $target : [gcref $source] -> [gcref $target]` and `: [gcnref $source] -> [gcref $target]`
     - iff `$target` is a `castable` child<sup>\*</sup> of `$source`
     - and `$source` has a castable extensibility attribute
   - traps unless the operand is an instance of `$target`
 
-* `ngcref.cast_null <schemeidx>` casts and converts `null` or an instance that was constructed as a child<sup>\*</sup> scheme of `$target`
-  - `ngcref.cast_null $target : [ngcref $source] -> [ngcref $target]`
+* `gcnref.cast_null <schemeidx>` casts and converts `null` or an instance that was constructed as a child<sup>\*</sup> scheme of `$target`
+  - `gcnref.cast_null $target : [gcnref $source] -> [gcnref $target]`
     - iff `$target` is a `castable` child<sup>\*</sup> of `$source`
     - and `$source` has a castable extensibility attribute
   - traps unless the operand is `null` or an instance of `$target`
@@ -277,21 +282,21 @@ Question: what should happen when an `i32` or `i64` is inexpressible in field it
     - iff `$target` is a `castable` child<sup>\*</sup> of `$source`
     - and `$source` has a castable extensibility attribute
     - and `$l : [gcref $source]`
-  - `gcref.br_or_cast $target $l : [ngcref $source] -> [ngcref $target]`
+  - `gcref.br_or_cast $target $l : [gcnref $source] -> [gcnref $target]`
     - iff `$target` is a `castable` child<sup>\*</sup> of `$source`
     - and `$source` has a castable extensibility attribute
     - and `$target` is `nullable`
     - and `$l : [gcref $source]`
-  - `gcref.br_or_cast $target $l $lnull : [ngcref $source] -> [gcref $target]`
+  - `gcref.br_or_cast $target $l $lnull : [gcnref $source] -> [gcref $target]`
     - iff `$target` is a `castable` child<sup>\*</sup> of `$source`
     - and `$source` has a castable extensibility attribute
     - and `$l : [gcref $source]`
-    - and `$lnull : [nullref]` (designed so that `$l` and `$lnull` can be same label of type `[ngcref $target]`)
+    - and `$lnull : [gcnull $target]` (designed so that `$l` and `$lnull` can be same label of type `[gcnref $target]`)
   - branches to `$l` iff the operand is an instance of `$target` or `$lnull` is omitted and the operand is `null`
   - branches to `$lnull` iff `$lnull` is specified and the operand is `null`
   - passes cast operand along with branch
 
-* `gcref.switch_cast <labelidx>? (<schemeidx> <labelidx>)*` branches to the label corresponding to the most precise scheme of an instance (or to `$lnull` if a value is `null`)?
+* `gcref.switch_cast (<schemeidx> <labelidx>)? (<schemeidx> <labelidx>)*` branches to the label corresponding to the most precise scheme of an instance (or to `$lnull` if a value is `null`)?
   - `gcref.switch_cast $target1 $l1 ... : [gcref $source] -> [gcref $source]`
     - iff each `$targeti` is a `castable` child<sup>\*</sup> of `$source`
     - and `$source` has a castable extensibility attribute
@@ -303,19 +308,19 @@ Question: what should happen when an `i32` or `i64` is inexpressible in field it
     - and each `$li : [gcref $targeti]`
     - and if any `$targeti` are `$targetj1` are potentially the same scheme then `i` equals `j`
     - and every `castable` child<sup>\*</sup> of `$source` is guaranteed to be a child<sup>\*</sup> of some `$targeti` due to `cases` extensibilities
-  - `gcref.switch_cast $lnull $target1 $l1 ... : [ngcref $source] -> [gcref $source]`
+  - `gcref.switch_cast $tnull $lnull $target1 $l1 ... : [gcnref $source] -> [gcref $source]`
     - iff each `$targeti` is a `castable` child<sup>\*</sup> of `$source`
     - and `$source` has a castable extensibility attribute
     - and each `$li : [gcref $targeti]`
     - and if any `$targeti` are `$targetj1` are potentially the same scheme then `i` equals `j`
-    - and `$lnull : [nullref]`
-  - `gcref.switch_cast $lnull $target1 $l1 ... : [ngcref $source] -> unreachable`
+    - and `$lnull : [gcnull $tnull]`
+  - `gcref.switch_cast $tnull $lnull $target1 $l1 ... : [gcnref $source] -> unreachable`
     - iff each `$targeti` is a `castable` child<sup>\*</sup> of `$source`
     - and `$source` has a castable extensibility attribute
     - and each `$li : [gcref $targeti]`
     - and if any `$targeti` are `$targetj1` are potentially the same scheme then `i` equals `j`
     - and every `castable` child<sup>\*</sup> of `$source` is guaranteed to be a child<sup>\*</sup> of some `$targetn` due to `cases` extensibilities
-    - and `$lnull : [nullref]`
+    - and `$lnull : [gcnull $tnull]`
   - branches to `$li` iff the operand is an instance of `$targeti` and furthermore every `targetj` that the operand is an instance of is a parent<sup>\*</sup> of `$targeti`
   - branches to `$lnull` iff `$lnull` is specified and the operand is `null`
   - passes cast operand along with branch

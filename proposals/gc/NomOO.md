@@ -44,11 +44,11 @@ $Object_vtable
                      readable immutable)
               (field class (gcref $class_class)
                      readable immutable)
-              (field getClass (func (param (gcref $Object)) (result (ngcref $Class)))
+              (field getClass (func (param (gcref $Object)) (result (gcnref $Class)))
                      readable immutable)
-              (field equals (func (param (gcref $Object) (ngcref $Object)) (result i32))
+              (field equals (func (param (gcref $Object) (gcnref $Object)) (result i32))
                      readable immutable)
-              (field toString (func (param (gcref $Object)) (result (ngcref $String)))
+              (field toString (func (param (gcref $Object)) (result (gcnref $String)))
                      readable immutable)
               ...
               extensible
@@ -106,7 +106,7 @@ In fact, ideally this casting scheme would be done using fat pointers so that a 
 ```
 $Comparable
 := scheme.new (parent implicit $imtable)
-              (field compareTo (func (param (gcref $Object) (ngcref $Object)) (result i32))
+              (field compareTo (func (param (gcref $Object) (gcnref $Object)) (result i32))
                      readable immutable)
               constructible
 $CharSequence
@@ -218,7 +218,7 @@ $reference_array
                      readable immutable)
               (field length length (unsigned 32)
                      readable immutable)
-              (field indexed element (ngcref $Object)
+              (field indexed element (gcnref $Object)
                      readable writeable mutable)
               castable
               constructible
@@ -250,7 +250,7 @@ $Class
               nullable
 $Class_vtable
 := scheme.new (parent implicit $Object_vtable)
-              (field isInstance (func (param (gcref $Class) (ngcref $Object)) (result i32))
+              (field isInstance (func (param (gcref $Class) (gcnref $Object)) (result i32))
                      readable immutable)
               ...
               constructible
@@ -318,6 +318,16 @@ $reference_array_class
 The `$reference_array_class` scheme introduces an `element_class` field.
 If this instance is supposed to denote `String[]`, then `element_class` references the run-time representation of `String`.
 In this case, a cast is implemented by checking whether the given object is an instance of `$reference_array` and, if so, checking whether its `element_class` value represents a subtype of this reference-array-class's `element_class` (the implementation of which we do not go into).
+
+
+## Null
+
+The `null` value in Java is special in that it can be considered to have any reference type in Java.
+Some languages even have a type `Null` that is a subtype of any (nullable) reference type.
+The proposal provides this functionality through the `scheme.null $Object` instruction and the `gcnull $Object` type.
+We found it necessary to parameterize `gcnull` by a scheme to prevent imposing constraints on how unrelated but `nullable` schemes can be represented at the pointer level (e.g. one scheme might be represented using standard pointers while another scheme might be represented using fat pointers).
+However, `gcnull` is *bi*variant with respect to `implicit` parent-child relationships (which must share the same pointer represenations).
+This means that `gcnull $Object` is a subtype of `gcnull $String`, making it a subtype of any (nullable) reference type of the source language.
 
 
 ## Constructors
@@ -423,11 +433,11 @@ $Object_vtable
                      readable immutable)
               (field class (gcref $class_class)
                      readable immutable)
-              (field getClass (func (param (gcref $reference)) (result (ngcref $Class)))
+              (field getClass (func (param (gcref $reference)) (result (gcnref $Class)))
                      readable immutable)
-              (field equals (func (param (gcref $reference) (ngcref $Object)) (result i32))
+              (field equals (func (param (gcref $reference) (gcnref $Object)) (result i32))
                      readable immutable)
-              (field toString (func (param (gcref $reference)) (result (ngcref $String)))
+              (field toString (func (param (gcref $reference)) (result (gcnref $String)))
                      readable immutable)
               ...
               extensible
@@ -467,7 +477,7 @@ $Enum
               (equatable deep)
 $enum_itables
 := scheme.new
-              (field (indexed 256) itable (ngcref $itable)
+              (field (indexed 256) itable (gcnref $itable)
                      readable initializable)
               constructible unique
 ```

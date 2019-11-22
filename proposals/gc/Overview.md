@@ -134,7 +134,7 @@ TBD
 Every scheme specifies a number of attributes, such as the fields describing the data in the scheme, compatibility requirements with other schemes, and the ability to extend the scheme.
 From this information, the engine generates an in-memory representation for the scheme and a packed-pointer representation for the scheme.
 The values of type `gcref $scheme` are packed-pointer representations of instances of `$scheme`.
-If the scheme is `nullable`, then the values of type `ngcref $scheme` are packed-pointer representations of instances of `$scheme` or of `null`.
+If the scheme is `nullable`, then the values of type `gcnref $scheme` are packed-pointer representations of instances of `$scheme` or of `null`.
 
 
 ### Compatibility
@@ -182,7 +182,7 @@ How casting is implemented is significantly affected by how schemes can be exten
 These notions are already introduced by [typed function references](https://github.com/WebAssembly/function-references/blob/master/proposals/function-references/Overview.md) and carry over to the new forms of reference types in this proposal.
 
 Plain references cannot be null, avoiding any runtime overhead for null checks when accessing a struct or array.
-Nullable references are available via a separate type constructor called `ngcref`, which is only permitted for schemes that are declared to be nullable.
+Nullable references are available via a separate type constructor called `gcnref`, which is only permitted for schemes that are declared to be nullable.
 
 Most value types, including all numeric types and nullable references are *defaultable*, which means that they have 0 or null as a default value.
 Other reference types are not defaultable.
@@ -260,8 +260,9 @@ Values of function reference type are formed with the `ref.func` operator:
 
 ### Type Grammar
 
-The overall type syntax is extended with three types: `gcref <schemeidx>`, `ngcref <schemeidx>`, and `nullref` (from the Reference Types proposal).
+The overall type syntax is extended with three types: `gcref <schemeidx>`, `gcnref <schemeidx>`, and `gcnull <schemeidx>`.
 These types reference schemes, which are defined through a series of attributes using a syntax defined in the [MVP](MVP.md).
+The types `gcnref $scheme` and `gcnull $scheme` are only valid when `$scheme` is declared to be `nullable`.
 Note that there is no need for type recursion in this proposal.
 And while schemes can reference each other recursively, this recursion is nominal, which greatly simplifies the definition of and algorithms for the type system.
 
@@ -271,12 +272,13 @@ And while schemes can reference each other recursively, this recursion is nomina
 Subtyping is designed to be _non-coercive_, i.e., never requires any underlying value conversion.
 
 The subtyping relation is the reflexive transitive closure of a few basic rules:
-1. `gcref $scheme1` is a subtype of `gcref $scheme2` if `$scheme2` is an `implicit` parent of `$scheme1`.
+1. `gcref $scheme1` is a subtype of `gcref $scheme2` if `$scheme2` is an `implicit` parent of `$scheme1`
+  - Note: there is no subtyping relation between a child and its `explicit` parent
+2. `gcnref $scheme1` is a subtype of `gcnref $scheme2` if `$scheme2` is an `implicit` parent of `$scheme1` (presuming both `$scheme1` and `$scheme2` are `nullable`)
   - Note: there is no subtyping relation between a child and its `explicit` parent.
-2. `ngcref $scheme1` is a subtype of `ngcref $scheme2` if `$scheme2` is an `implicit` parent of `$scheme1` (presuming both types are `ok`.
-  - Note: there is no subtyping relation between a child and its `explicit` parent.
-3. `gcref $scheme` is a subtype of `ngcref $scheme` (presuming the latter is `ok`)
-4. `nullref` is a subtype of `ngcref $scheme` (presuming the latter is `ok`)
+3. `gcref $scheme` is a subtype of `gcnref $scheme` (presuming `$scheme` is `nullable`)
+4. `gcnull $scheme` is a subtype of `gcnref $scheme` (presuming `$scheme` is `nullable`)
+5. `gcnull $scheme1` is a subtype of `gcnull $scheme2` if `$scheme2` is an `implicit` parent or child of `$scheme1` (presuming both `$scheme1` and `$scheme2` are `nullable`)
 
 
 ### Import and Export
