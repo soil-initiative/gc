@@ -8,6 +8,7 @@ It is meant for discussion, prototype specification and implementation of a prop
 See the [overview](proposals/gc/Overview.md) for an informal summary of the proposal.
 See the [MVP](proposals/gc/MVP.md) for a (more) formal description of the proposal.
 See [NomOO](proposals/gc/NomOO.md) for an in-depth illustration of how a Java-like language would be supported by the proposal.
+See [TypedFun](proposals/gc/TypedFun.md) for an in-depth illustration of how a Haskell/OCaml-like language would be supported by the proposal.
 
 Original `README` from upstream repository follows...
 

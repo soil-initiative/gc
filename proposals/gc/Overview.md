@@ -91,7 +91,7 @@ GC support should maintain Wasm's efficiency properties as much as possible, nam
 * structures are contiguous, dense chunks of memory
 * field accesses are single-indirection loads and stores
 * allocation is fast
-* references should be boxable whenever possible in the high-level language
+* references should be packable whenever possible in the high-level language
 * allows ahead-of-time compilation and code caching
 
 
@@ -100,7 +100,7 @@ GC support should maintain Wasm's efficiency properties as much as possible, nam
 Example languages from three categories should be successfully implemented:
 
 * an [object-oriented language with nominal subtyping](NomOO.md) (e.g., a subset of Java, with classes, inheritance, interfaces)
-* a typed functional language (e.g., a subset of ML, with closures, polymorphism, variant types)
+* a [typed functional language](TypedFun.md) (e.g., a subset of ML, with closures, polymorphism, variant types)
 * an untyped language (e.g., a subset of Scheme or Python or something else)
 
 
@@ -109,6 +109,7 @@ Example languages from three categories should be successfully implemented:
 ### Support for GC Languages
 
 * an [object-oriented language with nominal subtyping](NomOO.md) (e.g., a subset of Java, with classes, inheritance, interfaces)
+* a [typed functional language](TypedFun.md) (e.g., a subset of ML, with closures, polymorphism, variant types)
 
 ### Inter-Module Sharing (Interface Types)
 
