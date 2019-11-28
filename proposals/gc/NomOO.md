@@ -166,7 +166,7 @@ $String_vtable
               (field charAt (func (param (gcref $String) i32) (result i32))
                      readable immutable)
               ...
-              constructible unique
+              constructible
 ```
 
 The most important detail to observe is that the `vtable` field is *refined* to be a `gcref $String_vtable`, taking advantage of the covariance permitted by the fact that `vtable` is only `readable` and not `writeable`.
@@ -479,7 +479,7 @@ $enum_itables
 := scheme.new
               (field (indexed 256) itable (gcnref $itable)
                      readable initializable)
-              constructible unique
+              constructible
 ```
 
 This redesign makes `$Object` have two cases: `$primitive` and `$nonprimitive`.

@@ -51,8 +51,7 @@ Attributes describe memory invariants that a garbage collector needs to know abo
   - `castattr ::= castable`
 
 * An instantiation attribute indicates how instances of this scheme (as opposed to some child scheme) can be created. A scheme can have at most one construction attribute.
-  - `instantiationattr ::= constructible unique? | extensible (explicit | flat | hierarchical | cases <schemeidx>*)?`
-    + A `unique` constructible scheme has at most one instance ever constructed. This can enable the unqiue instance to be packed even if it has `identity` equality.
+  - `instantiationattr ::= constructible | extensible (explicit | flat | hierarchical | cases <schemeidx>*)?`
     + `explicit` is a castable extensibility that requires all child schemes to be `explicit` children, but imposes no restriction on how those schemes might be instantiated. This enables the representation of this scheme to be determined independently of the representation of its child schemes, but at the cost of explicit conversion.
     + `flat` is a castable extensibility that requires all `extensible` child<sup>+</sup> schemes to have `cases` extensibility, but ensures casts to child<sup>+</sup> schemes can be performed by an arithmetic range (or equality) check on an instance's run-time scheme identifier.
       - It might be worthwhile to have a flag that indicates to provide very fast casts by fattening the pointer. Probably would have to impose significant restrictions on hierarchy.
@@ -147,14 +146,12 @@ Question: what should happen when an `i32` or `i64` is inexpressible in field it
     - iff `$scheme` is `constructible`
     - and `t*` corresponds to the non-indexed fields of `$scheme`
     - and all indexed fields have defaultable types
-  - traps if an instance of `$scheme` has already been constructed
 
 * `scheme.construct_indexed <schemeidx> <length>` constructs an instance of `$scheme` and initializes its fields with given values
   - `scheme.construct_indexed $scheme n : [t*] -> [(gcref $scheme)]`
     - iff `$scheme` is `constructible`
     - and `$scheme` has a `length` field that can express `n`
     - and `t*` corresponds to the non-length fields of `$scheme`
-  - traps if an instance of `$scheme` has already been constructed
 
 * `scheme.construct_default <schemeidx> <fieldname>*` constructs an instance of `$scheme` and initializes all fields *not* in `$field*` with default values
   - `scheme.construct_default $scheme : [t*] -> [(gcref $scheme)]`
@@ -162,7 +159,6 @@ Question: what should happen when an `i32` or `i64` is inexpressible in field it
     - and `t*` corresponds to the fields in `$field*`
     - and all fields not in `$field*` have defaultable types
     - and, if a `length` field is in `$field*`, then no indexed fields are in `$field*`
-  - traps if an instance of `$scheme` has already been constructed
 
 * `scheme.construct_copy <schemeidx> <fieldname>*` constructs an instance of `$scheme` using an instance of a `$source` scheme to initialize the `immutable` fields *not* in `$field*`
   - `scheme.construct_source $scheme $field* : [(gcref $source) t*] -> [(gcref $scheme)]`
@@ -172,7 +168,6 @@ Question: what should happen when an `i32` or `i64` is inexpressible in field it
     - and every field in `$field*` is `immutable` and non-indexed in `$source`
     - and every `immutable` field of `$scheme` not in `$field*` has a corresponding `readable` field in `$source` with an equivalent type
     - and every indexed field of `$scheme` either has a defaultable type or is immutable and is in `$source` but not in `$field*` and the `length` field is in `$source` but not in `$field*`
-  - traps if an instance of `$scheme` has already been constructed
 
 * `scheme.null <schemeidx>` produces `$scheme`'s representation of the `null` value.
   - `scheme.null $source : [] -> [(gcnull $scheme)]`
