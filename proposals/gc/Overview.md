@@ -64,6 +64,12 @@ On the other hand, a pointer implementing a reference to an immutable `float64` 
 Many languages design their pointers specialized packing schemes, but these schemes are often dependent on the hardware and the garbage collector at hand, which WebAssembly have no control over.
 As such, this proposal is designed to give the engine the information it needs in order to develop a packing scheme well-suited for that language on the given hardware for the given garbage collector.
 
+Although this proposal makes an effort to keep dynamic checks efficient, in the longer term a full GC proposal would be able to eliminate many of the dynamic checks by utilizing fancier type-system features.
+Many opportunities for these features are noted throughout the proposal.
+Some such features that are known to be useful in low-level type systems are (predicative) universal/existential quantifiers, multi-value types (e.g. recognizing that the values in two different registers exhibit an important relationship), and substructural types (e.g. linear/affine types).
+The current formulation of WebAssembly relies heavily on norms that these features would violate, and so for the MVP we opted to employ dynamic checks in any situation that was known to necessitate one or more of these features.
+At the same time, we made an effort to design the MVP to be forward compatible with such features.
+
 
 ### Types
 
