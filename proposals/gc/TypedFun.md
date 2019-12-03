@@ -9,7 +9,7 @@ In order to support parametric polymorphism, the MVP needs to support an efficie
 
 That said, it is still important that all values be expressible in some uniform representation.
 But in designing this uniform representation there is something beyond efficiency that we should consider.
-Just as WebAssembly works hard to develop a design that prevents websites from becoming reliant upon implementation details (like endianness), languages compiling to WebAssembly also do not programs interacting with their compiled modules to become dependent on implementation details.
+Just as WebAssembly works hard to develop a design that prevents websites from becoming reliant upon implementation details (like endianness), languages compiling to WebAssembly also do not want programs interacting with their compiled modules to become dependent on implementation details.
 For example, reordering the cases of an algebraic data type is a semantics-preserving transformation in many languages, as is renaming a case (provided all match expressions and constructing expressions are similarly renamed), and so a language compiler wants to ensure that the resulting change in the compiled WebAssembly module is similarly semantics preserving.
 If values can exit and enter the module, through say `anyref` in imports and exports, then this semantics includes the casting behavior of values.
 One can prove that this has significant implications on casting between different algebraic data types in particular.
