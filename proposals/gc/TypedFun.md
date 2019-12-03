@@ -93,6 +93,7 @@ Lastly, each of the closure schemes is `extensible flat`.
 This enables each closure-allocation site in the source code to specify its own child scheme of the appropriate arity.
 The function pointer in the `implementation` field can then cast the given closure argument to its specific associated scheme.
 This both enforces the expectation that the `implementation` is only given associated closure instances, and grants the code referenced by `implementation` access to the fields of the closure that are specfic to that `implementation` (i.e. to the values of the specific local variables that are closed over in the corresponding source code).
+Eventually we hope to remove the need for this dynamic cast, but verifying the safety of this pattern requires fancy types that are beyond the scope of the MVP.
 
 
 ## Parametric Polymorphism
