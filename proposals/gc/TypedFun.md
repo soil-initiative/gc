@@ -76,7 +76,7 @@ $paramplus
 := scheme.new
               (field length arity (unsigned 8)
                      readable immutable)
-              (field indexed param (gcref $uniform)
+              (field (indexed arity) param (gcref $uniform)
                      readable immutable)
               constructible
 ```
@@ -280,7 +280,7 @@ $record
                      readable immutable)
               (field (length inclusive) count (unsigned 8)
                      readable immutable)
-              (field indexed member (gcref $uniform)
+              (field (indexed count) member (gcref $uniform)
                      readable writeable mutable)
               castable
               constructible
@@ -319,7 +319,7 @@ $constructor
 := scheme.new (parent implicit $adt)
               (field (length inclusive) arity (unsigned 8)
                      readable immutable)
-              (field indexed member (gcref $uniform)
+              (field (indexed arity) member (gcref $uniform)
                      readable immutable)
               castable
               constructible

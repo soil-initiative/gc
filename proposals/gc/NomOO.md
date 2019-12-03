@@ -84,7 +84,7 @@ $itable
 := scheme.new
               (field length interface_count (unsigned 8)
                      readable immutable)
-              (field indexed interface (gcref $imtable)
+              (field (indexed interface_count) interface (gcref $imtable)
                      readable immutable)
               constructible
 ```
@@ -156,7 +156,7 @@ $charblock
 := scheme.new
               (field length numchars (unsigned 32)
                      readable immutable)
-              (field indexed char (unsigned 16)
+              (field (indexed numchars) char (unsigned 16)
                      readable immutable)
               constructible
 $String_vtable
@@ -200,7 +200,7 @@ $int_array
 := scheme.new (parent implicit $Object)
               (field length length (unsigned 32)
                      readable immutable)
-              (field indexed element i32
+              (field (indexed length) element i32
                      readable writeable mutable)
               castable
               constructible
@@ -218,7 +218,7 @@ $reference_array
                      readable immutable)
               (field length length (unsigned 32)
                      readable immutable)
-              (field indexed element (gcnref $Object)
+              (field (indexed length) element (gcnref $Object)
                      readable writeable mutable)
               castable
               constructible
@@ -489,8 +489,7 @@ The schemes of other classes (besides `Number`) should be descendents of `$refer
 
 To implement interface-method dispatch in this design, if the instance is an `$Enum`, then one uses the value of `enum_class` to fetch an `$itable` from the indexed `itable` field of some global `gcref $enum_tables` variable.
 The reason `enum_class` is not simply a `gcref $itable` is because an 8-bit unsigned integer is more likely to be packed.
-(Note that the `itable` field is declared to be `indexed 256`.
-This uses an extension to consider for enabling arrays of statically-determined length.)
+Note that the `itable` field is declared to be `indexed 256`, demonstrating a use case of fixed-length indexing.
 
 A major downside of this design is that it caps the number of enum classes to 256.
 Similarly, it caps the number of enum cases to 256.

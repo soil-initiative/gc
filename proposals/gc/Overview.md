@@ -161,7 +161,7 @@ Currently the options are `mutable`, `immutable`, and `initializable`.
 The last indicates that the field can only be changed from its default value&mdash;once it has a non-default value, it cannot be changed.
 
 A scheme can have one appropriately typed `immutable` field specified as its `length`, thereby making the scheme represent an array rather than just a tuple.
-A field can be declared to be `indexed`, in which case it has a value for each non-negative index strictly less than the value of the `length` field.
+A field can be declared to be `indexed` by same value or `length` field, in which case it has a value for each non-negative index strictly less than the given value or the instance's value of the specified `length` field.
 The accessor and mutator instructions for `indexed` fields corresponding require an additional run-time argument indicating the index to access or mutate.
 
 

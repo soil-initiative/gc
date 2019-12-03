@@ -30,9 +30,9 @@ Attributes describe memory invariants that a garbage collector needs to know abo
   - We use parent<sup>+</sup> to refer to parents and parents of parents and so on. We use parent<sup>\*</sup> to refer to parents<sup>+</sup> and this scheme. Likewise for child<sup>+</sup> and child<sup>*</sup>.
   
 * A field attribute describes how an instance of the scheme can be accessed or mutated.
-  - `fieldattr ::= field (length|indexed|refine)? <fieldname> (<type>|<inttype>) readable? writeable? <mutationattr>?`
-    + Having a `length` field indicates that the scheme describes an array. There can be at most one `length` field, and it must have an `unsigned` type and be `immutable` or `constant`.
-    + An `indexed` field is one that must be accessed using a non-negative index that is strictly less than the (unsigned) value of the `length` field. A scheme can only have `indexed` fields if it has a `length` field.
+  - `fieldattr ::= field (length | indexed (<fieldname> | <length>) | refine)? <fieldname> (<type> | <inttype>) readable? writeable? <mutationattr>?`
+    + Having a `length` field indicates that the scheme describes an array. For now, there can be at most one `length` field. A `length` field must have an `unsigned` type and be `immutable`.
+    + An `indexed` field is one that must be accessed using a non-negative index that is strictly less than the (unsigned) value of the designated field or integer. The designated field must be a `length` field.
     + A scheme with a `refine` field must have a parent<sup>+</sup> scheme with a field of the same `<fieldname>`.
     + The `<fieldname>` is used in place of an index so that child schemes can specify fields without knowing the full contents of their parents. The specific name has no run-time significance; it is effectively an abstract name for an unknown offset to be determined by the engine.
   - `inttype ::= (signed | unsigned) <num-bits>` (where 0 < `<num-bits>` <= 64)
@@ -45,7 +45,7 @@ Attributes describe memory invariants that a garbage collector needs to know abo
     + If this field is `readable`, then the parent<sup>+</sup>'s field must be of a supertype of this field.
     + If this field is `writeable`, then the parent<sup>-</sup>`s field must be of a subtype of this field.
     + If the parent<sup>+</sup>'s field has a mutation type, then this field must have same mutation type.
-  - If a parent<sup>+</sup> scheme has a `length` field, then every field of this scheme must be a `refine` field.
+  - For now, if a parent<sup>+</sup> scheme has a `length` field, then every field of this scheme must be a `refine` field.
 
 * A cast attribute indicates whether this scheme can be cast to from its parent. A scheme can have at most one cast attribute.
   - `castattr ::= castable`
@@ -141,33 +141,33 @@ In particular, the appropriate equality attribute might permit the structure to 
 In the following, `i32` corresponds to `signed` or `unsigned` fields of `32` bits or less, and `i64` corresponds to `signed` or `unsigned` fields of `64` bits or less.
 Question: what should happen when an `i32` or `i64` is inexpressible in field it is being assigned to?
 
-* `scheme.construct <schemeidx>` constructs an instance of `$scheme` and initializes its non-indexed fields with given values
+* `scheme.construct <schemeidx>` constructs an instance of `$scheme` and initializes its non-field-indexed fields with given values
   - `scheme.construct $scheme : [t*] -> [(gcref $scheme)]`
     - iff `$scheme` is `constructible`
-    - and `t*` corresponds to the non-indexed fields of `$scheme`
-    - and all indexed fields have defaultable types
+    - and `t*` corresponds to the non-field-indexed fields of `$scheme`
+    - and all field-indexed fields have defaultable types
 
-* `scheme.construct_indexed <schemeidx> <length>` constructs an instance of `$scheme` and initializes its fields with given values
-  - `scheme.construct_indexed $scheme n : [t*] -> [(gcref $scheme)]`
+* `scheme.construct_indexed <schemeidx> <fieldname> <length>` constructs an instance of `$scheme` and initializes its fields with given values
+  - `scheme.construct_indexed $scheme $field n : [t*] -> [(gcref $scheme)]`
     - iff `$scheme` is `constructible`
-    - and `$scheme` has a `length` field that can express `n`
-    - and `t*` corresponds to the non-length fields of `$scheme`
+    - and `$scheme` has a `length` field with name `$field` whose type can express `n`
+    - and `t*` corresponds to the non-`$field` non-`$field`-indexed fields of `$scheme` followed by the `$field`-indexed fields of `$scheme`
 
 * `scheme.construct_default <schemeidx> <fieldname>*` constructs an instance of `$scheme` and initializes all fields *not* in `$field*` with default values
   - `scheme.construct_default $scheme : [t*] -> [(gcref $scheme)]`
     - iff `$scheme` is `constructible`
     - and `t*` corresponds to the fields in `$field*`
     - and all fields not in `$field*` have defaultable types
-    - and, if a `length` field is in `$field*`, then no indexed fields are in `$field*`
+    - and, if a `length` field is in `$field*`, then no fields by that field are in `$field*`
 
 * `scheme.construct_copy <schemeidx> <fieldname>*` constructs an instance of `$scheme` using an instance of a `$source` scheme to initialize the `immutable` fields *not* in `$field*`
   - `scheme.construct_source $scheme $field* : [(gcref $source) t*] -> [(gcref $scheme)]`
     - iff `$scheme` is `constructible`
-    - and `t*` corresponds to the fields in `$field*` plus the non-immutable non-indexed fields of `$scheme`
+    - and `t*` corresponds to the fields in `$field*` plus the non-immutable non-field-indexed fields of `$scheme`
     - and `$source` is a parent<sup>\*</sup> of `$scheme`
-    - and every field in `$field*` is `immutable` and non-indexed in `$source`
+    - and every field in `$field*` is `immutable` and non-field-indexed in `$source`
     - and every `immutable` field of `$scheme` not in `$field*` has a corresponding `readable` field in `$source` with an equivalent type
-    - and every indexed field of `$scheme` either has a defaultable type or is immutable and is in `$source` but not in `$field*` and the `length` field is in `$source` but not in `$field*`
+    - and every field-indexed field of `$scheme` either has a defaultable type or is immutable and is in `$source` but not in `$field*` and the corresponding `length` field is in `$source` but not in `$field*`
 
 * `scheme.null <schemeidx>` produces `$scheme`'s representation of the `null` value.
   - `scheme.null $source : [] -> [(gcnull $scheme)]`
@@ -204,27 +204,27 @@ Question: what should happen when an `i32` or `i64` is inexpressible in field it
 * `gcref.get_indexed <fieldname>` reads from field `x` of an instance
   - `gcref.get x : [(gcref $scheme) ti] -> [t]` and `: [(gcnref $scheme) ti] -> [t]`
     - iff `$scheme` has an indexed `readable` field with name `x` and type `t`
-    - and `ti` is compatible with `length` field of `$scheme`
+    - and `ti` is compatible with the length field or value of `x`
   - traps on `null` or if the dynamic index is out of bounds
 
 * `gcref.get_indexed_<numbits> <fieldname>` reads from field `x` of an instance
   - `gcref.get_indexed_nb x : [(gcref $scheme) ti] -> [inb]` and `: [(gcnref $scheme) ti] -> [inb]`
     - iff `$scheme` has an indexed `readable` field with name `x` and type `signed|unsigned nbx` with `nbx <= nb`
-    - and `ti` is compatible with `length` field of `$scheme`
+    - and `ti` is compatible with length field or value of `x`
   - sign extends as indicated by `signed` or `unsigned` quality of field `x`
   - traps on `null` or if the dynamic index is out of bounds
 
 * `gcref.set_indexed <fieldname>` writes to field `x` of an instance
   - `gcref.set_indexed x : [(gcref $scheme) t ti] -> []` and `: [(gcnref $scheme) t ti] -> []`
     - iff `$scheme` has an indexed `writeable` and `mutable` field with name `x` and type compatible with `t`
-    - and `ti` is compatible with `length` field of `$scheme`
+    - and `ti` is compatible with length field or value of `x`
   - traps if field `x` has `initializable` mutability and has already been initialized
   - traps on `null` or if the dynamic index is out of bounds
 
 * `gcref.initialize_indexed <fieldname>` attempts to initialize field `x` of an instance and indicates whether the initialization succeeded (where failure indicates `x` is already initialized)
   - `gcref.initialize_indexed x : [(gcref $scheme) t ti] -> [i32]` and `: [(gcnref $scheme) t ti] -> [i32]`
-    - iff `$scheme` has indexed `writeable` and `initializable` field with name `x` and type compatible with `t`- 
-    - and `ti` is compatible with `length` field of `$scheme`
+    - iff `$scheme` has indexed `writeable` and `initializable` field with name `x` and type compatible with `t`
+    - and `ti` is compatible with the length field or value of `x`
   - returns 1 if the field `x` now forever has the value of the second operand, 0 otherwise
   - traps on `null` or if the dynamic index is out of bounds
 
