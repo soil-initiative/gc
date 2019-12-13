@@ -61,7 +61,7 @@ Conceptually speaking, they denote an address in memory where the contents of th
 In reality, a reference denotes an engine-specific representation of the data, which for lack of a better term we will call a pointer.
 For example, a pointer implementing a reference to an immutable `float64` on a 64-bit engine employing NaN boxing would often simply be the 64 bits of the `float64` rather than an address.
 On the other hand, a pointer implementing a reference to an immutable `float64` on a 32-bit engine would typically be the address at which the 64 bits of the `float64` can be found in the heap.
-Many languages design their pointers specialized packing schemes, but these schemes are often dependent on the hardware and the garbage collector at hand, which WebAssembly have no control over.
+Many languages design their pointers using specialized packing schemes, but these schemes are often dependent on the hardware and the garbage collector at hand, which languages compiling to WebAssembly have no control over.
 As such, this proposal is designed to give the engine the information it needs in order to develop a packing scheme well-suited for that language on the given hardware for the given garbage collector.
 
 Although this proposal makes an effort to keep dynamic checks efficient, in the longer term a full GC proposal would be able to eliminate many of the dynamic checks by utilizing fancier type-system features.
