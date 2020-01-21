@@ -13,7 +13,7 @@ See [overview](Overview.md) for background.
 Schemes are a new top-level component.
 Each scheme describes a memory layout that the garbage collector is responsible for collecting and the type-checker is responsible for reasoning about.
 
-* `schemetype ::= scheme.new <parentattr>? <fieldattr>* <castattr>? <instantiationattr>? <nullabilityattr>? <equalityattr>?`
+* `schemetype ::= scheme.new <parentattr>? <fieldattr>* <instantiationattr>? <castattr>? <nullabilityattr>? <equalityattr>?`
 
 We use `new` here to emphasize that, even though schemes are not actually created dynamically within an instance, two new schemes are never the same even if they have the same attributes.
 In particular, two module instances can only refer to the same scheme instance if one exports the scheme to the other (though we forgo details of exporting/importing schemes for now).
@@ -47,10 +47,7 @@ Attributes describe memory invariants that a garbage collector needs to know abo
     + If the parent<sup>+</sup>'s field has a mutation type, then this field must have same mutation type.
   - For now, if a parent<sup>+</sup> scheme has a `length` field, then every field of this scheme must be a `refine` field.
 
-* A cast attribute indicates whether this scheme can be cast to from its parent. A scheme can have at most one cast attribute.
-  - `castattr ::= castable`
-
-* An instantiation attribute indicates how instances of this scheme (as opposed to some child scheme) can be created. A scheme can have at most one construction attribute.
+* An instantiation attribute indicates how instances of this scheme can be created. A scheme can have at most one construction attribute.
   - `instantiationattr ::= constructible | extensible (explicit | flat | hierarchical | cases <schemeidx>*)?`
     + `explicit` is a castable extensibility that requires all child schemes to be `explicit` children, but imposes no restriction on how those schemes might be instantiated. This enables the representation of this scheme to be determined independently of the representation of its child schemes, but at the cost of explicit conversion.
     + `flat` is a castable extensibility that requires all `extensible` child<sup>+</sup> schemes to have `cases` extensibility, but ensures casts to child<sup>+</sup> schemes can be performed by an arithmetic range (or equality) check on an instance's run-time scheme identifier.
@@ -59,6 +56,10 @@ Attributes describe memory invariants that a garbage collector needs to know abo
     + `cases` is a castable extensibility that requires all `castable` child<sup>+</sup> schemes to be a child<sup>\*</sup> of one the schemes in this list.
       - It might be worthwhile to have a flag that indicates to pack the cases into the pointer itself.
     + Question: should we make it possible to restrict the kind of fields children can have?
+
+* A cast attribute indicates whether this scheme can be cast to from its parent. A scheme can have at most one cast attribute.
+  - `castattr ::= castable`
+    + The scheme must have a parent<sup>+</sup> with a castable extensibility.
 
 * A nullability attribute indicates whether `null` is considered to be a value of this scheme. A scheme can have at most one nullability attribute.
   - `nullabilityattr ::= nullable`

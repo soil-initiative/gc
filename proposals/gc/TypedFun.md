@@ -50,28 +50,28 @@ $closure0
 := scheme.new (parent explicit $closure)
               (field implementation (func (param (gcref $closure0)) (result (gcref $uniform)))
                      readable immutable)
-              castable
               (extensible flat)
+              castable
 $closure1
 := scheme.new (parent explicit $closure)
               (field implementation (func (param (gcref $closure1) (gcref $uniform)) (result (gcref $uniform)))
                      readable immutable)
-              castable
               (extensible flat)
+              castable
 $closure2
 := scheme.new (parent explicit $closure)
               (field implementation (func (param (gcref $closure2) (gcref $uniform) (gcref $uniform)) (result (gcref $uniform)))
                      readable immutable)
-              castable
               (extensible flat)
+              castable
 $closure3plus
 := scheme.new (parent explicit $closure)
               (field arity (unsigned 8)
                      readable immutable)
               (field implementation (func (param (gcref $closure3plus) (gcref $uniform) (gcref $uniform) (gcref $uniform) (gcref $paramplus)) (result (gcref $uniform)))
                      readable immutable)
-              castable
               (extensible flat)
+              castable
 $paramplus
 := scheme.new
               (field length arity (unsigned 8)
@@ -118,14 +118,14 @@ $int
 := scheme.new (parent implicit $other)
               (field value (signed 32)
                      readable immutable)
-              castable
               constructible
+              castable
 $float
 := scheme.new (parent implicit $other)
               (field value float64
                      readable immutable)
-              castable
               constructible
+              castable
 ```
 
 Because both of these schemes are entirely `immutable` and permit no notion of equality, the engine can choose to pack common instances of these schemes into the pointer rather than allocate them on the heap.
@@ -141,20 +141,20 @@ The best known example of this is (linked) `list`:
 ```
 $list
 := scheme.new (parent explicit $other)
-              castable
               (extensible (cases $nil $cons))
+              castable
 $nil
 := scheme.new (parent implicit $list)
-              castable
               constructible
+              castable
 $cons
 := scheme.new (parent implicit $list)
               (field head (gcref $uniform)
                      readable immutable)
               (field tail (gcref $list)
                      readable immutable)
-              castable
               constructible
+              castable
 ```
 
 Note that the `head` field of `$cons` uses the `$uniform` scheme.
@@ -179,8 +179,8 @@ $ref
 := scheme.new (parent implicit $other)
               (field referent (gcref $uniform)
                      readable writeable mutable)
-              castable
               constructible
+              castable
               (equatable identity)
 ```
 
@@ -223,18 +223,18 @@ So we need to change `$other` to case on whether the value is primitive or not:
 ```
 $other
 := scheme.new (parent implicit $uniform)
-              castable
               (extensible (cases $primitive $nonprimitive))
+              castable
               (equatable case)
 $primitive
 := scheme.new (parent implicit $other)
-              castable
               (extensible (cases $int $float ...))
+              castable
               (equatable case)
 $nonprimitive
 := scheme.new (parent implicit $other)
-              castable
               (extensible flat)
+              castable
               (equatable identity)
 ```
 
@@ -266,8 +266,8 @@ So instead we must modify the `$nonprimitive` scheme to provide enough structure
 ```
 $nonprimitive
 := scheme.new (parent implicit $other)
-              castable
               (extensible (cases $record $adt))
+              castable
               (equatable case)
 ```
 
@@ -283,8 +283,8 @@ $record
                      readable immutable)
               (field (indexed count) member (gcref $uniform)
                      readable writeable mutable)
-              castable
               constructible
+              castable
               (equatable identity)
 $record_type
 := scheme.new
@@ -308,13 +308,13 @@ $adt
                      readable immutable)
               (field case_tag (unsigned 8)
                      readable immutable)
-              castable
               (extensible (cases $nullary $constructor))
+              castable
               (equatable case)
 $nullary
 := scheme.new (parent implicit $adt)
-              castable
               constructible
+              castable
               (equatable deep)
 $constructor
 := scheme.new (parent implicit $adt)
@@ -322,8 +322,8 @@ $constructor
                      readable immutable)
               (field (indexed arity) member (gcref $uniform)
                      readable immutable)
-              castable
               constructible
+              castable
               (equatable identity)
 $adt_type
 := scheme.new

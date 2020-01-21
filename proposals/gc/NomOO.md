@@ -148,8 +148,8 @@ $String
                      readable immutable)
               (field end (unsigned 32)
                      readable immutable)
-              castable
               constructible
+              castable
               nullable
               (equatable identity)
 $charblock
@@ -202,8 +202,8 @@ $int_array
                      readable immutable)
               (field (indexed length) element i32
                      readable writeable mutable)
-              castable
               constructible
+              castable
 ```
 
 As an example of a primitive array, `$int_array` defines the scheme for `int[]` Java values.
@@ -220,8 +220,8 @@ $reference_array
                      readable immutable)
               (field (indexed length) element (gcnref $Object)
                      readable writeable mutable)
-              castable
               constructible
+              castable
 ```
 
 There are two ways in which arrays could be designed.
@@ -245,8 +245,8 @@ $Class
 := scheme.new (parent implicit $Object)
               (field refine vtable (gcref $Class_vtable)
                      readable immutable)
-              castable
               (extensible (cases $prim_class $void_class $reference_class))
+              castable
               nullable
 $Class_vtable
 := scheme.new (parent implicit $Object_vtable)
@@ -269,8 +269,8 @@ Similarly, the case where the value being cast is `null` is trivial, so here on 
 ```
 $reference_class
 := scheme.new (parent explicit $Class)
-              castable
               (extensible (cases $class_or_interface_or_prim_array_class $reference_array_class))
+              castable
 ```
 
 Notice first that the `$reference_class` scheme declares `$Class` to be an `explicit` parent.
@@ -283,13 +283,13 @@ $class_or_interface_or_prim_array_class
 := scheme.new (parent explicit $reference_class)
               (field isInstance (func (param (gcref $Object)) (result i32))
                      readable immutable)
-              castable
               (extensible (cases $class_or_interface $prim_array))
+              castable
 $class_or_interface
 := scheme.new (parent explicit $class_or_interface_or_prim_array_class)
               ...
-              castable
               extensible (cases $class_class $interface_class)
+              castable
 $class_class := ...
 $interface_class := ...
 $prim_array_class := ...
@@ -388,15 +388,15 @@ But if the receiver has a static type like `List`, no primitive value implements
 ```
 $primitive
 := scheme.new (parent explicit $Object)
-              castable
               (extensible (cases $boolean $char $byte $short $int $long $float $double))
+              castable
               (equatable case)
 $boolean
 := scheme.new (parent explicit $primitive)
               (field value (unsigned 1)
                      readable immutable)
-              castable
               constructible
+              castable
               (equatable deep)
 $char := ...
 $byte := ...
