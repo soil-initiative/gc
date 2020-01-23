@@ -132,6 +132,8 @@ In addition to reflexivity and transitivity:
 ### Instructions
 
 All of the typing rules are given under the assumption that WebAssembly truly has subtyping, which significantly reduces annotation burden and eliminates many redundant type-checks.
+By convention, `gcref` traps when any primary operand is `null`, whereas `gcnref` explicitly handles the `null` case.
+As a shorthand, we use `gcnref $scheme` to denote itself when `$scheme` is `nullable` and to denote `gcref $scheme` when `$scheme` is not `nullable`.
 
 
 #### Construction
@@ -162,13 +164,14 @@ Question: what should happen when an `i32` or `i64` is inexpressible by the type
     - and, if a `length` field is in `$field*`, then no fields by that field are in `$field*`
 
 * `scheme.construct_copy <schemeidx> <fieldname>*` constructs an instance of `$scheme` using an instance of a `$source` scheme to initialize the `immutable` fields *not* in `$field*`
-  - `scheme.construct_copy $scheme $field* : [(gcref $source) t*] -> [(gcref $scheme)]`
+  - `scheme.construct_copy $scheme $field* : [(gcnref $source) t*] -> [(gcref $scheme)]`
     - iff `$scheme` is `constructible`
     - and `t*` corresponds to the fields in `$field*` plus the non-immutable non-field-indexed fields of `$scheme`
     - and `$source` is a parent<sup>\*</sup> of `$scheme`
     - and every field in `$field*` is `immutable` and non-field-indexed in `$source`
     - and every `immutable` field of `$scheme` not in `$field*` has a corresponding `readable` field in `$source` with an equivalent type
     - and every field-indexed field of `$scheme` either has a defaultable type or is immutable and is in `$source` but not in `$field*` and the corresponding `length` field is in `$source` but not in `$field*`
+  - traps on `null`
 
 * `scheme.null <schemeidx>` produces `$scheme`'s representation of the `null` value.
   - `scheme.null $source : [] -> [(gcnull $scheme)]`
@@ -178,24 +181,24 @@ Question: what should happen when an `i32` or `i64` is inexpressible by the type
 #### Accessors and Mutators
 
 * `gcref.get <fieldname>` reads from field `x` of an instance
-  - `gcref.get x : [(gcref $scheme)] -> [t]` and `: [(gcnref $scheme)] -> [t]`
+  - `gcref.get x : [(gcnref $scheme)] -> [t]`
     - iff `$scheme` has non-indexed `readable` field with name `x` and type `t`
   - traps on `null`
 
 * `gcref.get_<numbits> <fieldname>` reads from field `x` of an instance
-  - `gcref.get_nb x : [(gcref $scheme)] -> [inb]` and `: [(gcnref $scheme)] -> [inb]`
+  - `gcref.get_nb x : [(gcnref $scheme)] -> [inb]`
     - iff `$scheme` has non-indexed `readable` field with name `x` and type `signed|unsigned nbx` with `nbx <= nb` and `nb` equal to `32` or `64`
   - sign extends as indicated by `signed` or `unsigned` quality of field `x`
   - traps on `null`
 
 * `gcref.set <fieldname>` writes to field `x` of an instance
-  - `gcref.set x : [(gcref $scheme) t] -> []` and `: [(gcnref $scheme) t] -> []`
+  - `gcref.set x : [(gcnref $scheme) t] -> []`
     - iff `$scheme` has non-indexed `writeable`and `mutable`  field with name `x` and type compatible with `t`
   - traps if field `x` has `initializable` mutability and has already been initialized
   - traps on `null`
 
 * `gcref.initialize <fieldname>` attempts to initialize field `x` of an instance and indicates whether the initialization succeeded (where failure indicates `x` is already initialized)
-  - `gcref.initialize x : [(gcref $scheme) t] -> [i32]` and `: [(gcnref $scheme) t] -> [i32]`
+  - `gcref.initialize x : [(gcnref $scheme) t] -> [i32]`
     - iff `$scheme` has non-indexed `writeable` and `initializble` field with name `x` and type compatible with `t`
   - traps on `null`
 
@@ -203,27 +206,27 @@ Question: what should happen when an `i32` or `i64` is inexpressible by the type
 #### Indexed Accessors and Mutators
 
 * `gcref.get_indexed <fieldname>` reads from field `x` of an instance
-  - `gcref.get x : [(gcref $scheme) ti] -> [t]` and `: [(gcnref $scheme) ti] -> [t]`
+  - `gcref.get x : [(gcnref $scheme) ti] -> [t]`
     - iff `$scheme` has an indexed `readable` field with name `x` and type `t`
     - and `ti` is compatible with the length field or value of `x`
   - traps on `null` or if the dynamic index is out of bounds
 
 * `gcref.get_indexed_<numbits> <fieldname>` reads from field `x` of an instance
-  - `gcref.get_indexed_nb x : [(gcref $scheme) ti] -> [inb]` and `: [(gcnref $scheme) ti] -> [inb]`
+  - `gcref.get_indexed_nb x : [(gcnref $scheme) ti] -> [inb]`
     - iff `$scheme` has an indexed `readable` field with name `x` and type `signed|unsigned nbx` with `nbx <= nb`
     - and `ti` is compatible with length field or value of `x`
   - sign extends as indicated by `signed` or `unsigned` quality of field `x`
   - traps on `null` or if the dynamic index is out of bounds
 
 * `gcref.set_indexed <fieldname>` writes to field `x` of an instance
-  - `gcref.set_indexed x : [(gcref $scheme) t ti] -> []` and `: [(gcnref $scheme) t ti] -> []`
+  - `gcref.set_indexed x : [(gcnref $scheme) t ti] -> []`
     - iff `$scheme` has an indexed `writeable` and `mutable` field with name `x` and type compatible with `t`
     - and `ti` is compatible with length field or value of `x`
   - traps if field `x` has `initializable` mutability and has already been initialized
   - traps on `null` or if the dynamic index is out of bounds
 
 * `gcref.initialize_indexed <fieldname>` attempts to initialize field `x` of an instance and indicates whether the initialization succeeded (where failure indicates `x` is already initialized)
-  - `gcref.initialize_indexed x : [(gcref $scheme) t ti] -> [i32]` and `: [(gcnref $scheme) t ti] -> [i32]`
+  - `gcref.initialize_indexed x : [(gcnref $scheme) t ti] -> [i32]`
     - iff `$scheme` has indexed `writeable` and `initializable` field with name `x` and type compatible with `t`
     - and `ti` is compatible with the length field or value of `x`
   - returns 1 if the field `x` now forever has the value of the second operand, 0 otherwise
@@ -233,91 +236,89 @@ Question: what should happen when an `i32` or `i64` is inexpressible by the type
 #### Equality
 
 * `gcref.eq` compares two references whose scheme supports equality
-  - `gcref.eq : [(gcref $scheme) (gcref $scheme)] -> [i32]` where `$scheme` is `equatable`
+  - `gcref.eq : [(gcnref $scheme) (gcnref $scheme)] -> [i32]`
+    - iff `$scheme` is `equatable`
+  - traps iff either operand is `null`
 
 * `gcnref.eq` compares two possibly `null` references whose scheme supports equality, treating `null` as equal to itself
-  - `gcnref.eq : [(gcnref $scheme) (gcnref $scheme)] -> [i32]` where `$scheme` is `equatable`
+  - `gcnref.eq : [(gcnref $scheme) (gcnref $scheme)] -> [i32]`
+    - iff `$scheme` is `equatable`
 
 * `gcnref.eq_distinct` compares two possibly `null` references whose scheme supports equality, treating `null` as unequal to itself
-  - `gcnref.eq_distinct : [(gcnref $scheme) (gcnref $scheme)] -> [i32]` where `$scheme` is `equatable`
+  - `gcnref.eq_distinct : [(gcnref $scheme) (gcnref $scheme)] -> [i32]`
+    - iff `$scheme` is `equatable`
 
 
 #### Casts
 
-* `gcref.convert <schemeidx>` converts an instance to an instance of `$target`
-  - `gcref.convert $target : [gcref $source] -> [gcref $target]` and `: [gcnref $source] -> [gcnref $target]`
+* `gcnref.convert <schemeidx>` converts an instance to an instance of `$target`
+  - `gcnref.convert $target : [(gcref $source)] -> [(gcref $target)]` and `: [(gcnref $source)] -> [(gcnref $target)]`
     - iff `$target` is a parent<sup>\*</sup> of `$source`
 
-* `gcref.convert <schemeidx>` converts an instance to an instance of `$target`
-  - `gcref.convert $target : [gcref $source] -> [gcref $target]`
-    - iff `$target` is a parent<sup>\*</sup> of `$source`
+* `gcref.test <schemeidx>` tests whether an instance is an instance of `$target`
+  - `gcref.test $target : [(gcnref $source)] -> [i32]`
+    - iff `$target` is a `castable` child<sup>\*</sup> of `$source`
+    - and a parent<sup>\*</sup> of `$source` has a castable extensibility attribute
+  - returns 1 if the operand is an instance of `$target`, 0 otherwise
+  - traps on `null`
 
-* `gcref.test <schemeidx> (0|1)?` tests whether an instance is an instance of `$target`
-  - `gcref.test $target : [gcref $source] -> [i32]`
+* `gcnref.test <schemeidx> (0|1)` tests whether an instance is an instance of `$target`
+  - `gcnref.test $target n : [(gcnref $source)] -> [i32]`
     - iff `$target` is a `castable` child<sup>\*</sup> of `$source`
-    - and `$source` has a castable extensibility attribute
-  - `gcref.test $target n : [gcnref $source] -> [i32]`
-    - iff `$target` is a `castable` child<sup>\*</sup> of `$source`
-    - and `$source` has a castable extensibility attribute
+    - and a parent<sup>\*</sup> of `$source` has a castable extensibility attribute
   - returns 1 if the operand is an instance of `$target`, `n` if the operand is `null`, 0 otherwise
 
-* `gcref.cast <schemeidx>` casts and converts an instance that was constructed as a child<sup>\*</sup> scheme of `$target`
-  - `gcref.cast $target : [gcref $source] -> [gcref $target]` and `: [gcnref $source] -> [gcref $target]`
+* `gcref.cast <schemeidx>` casts and converts an instance of `$target`
+  - `gcref.cast $target : [(gcnref $source)] -> [(gcref $target)]`
     - iff `$target` is a `castable` child<sup>\*</sup> of `$source`
-    - and `$source` has a castable extensibility attribute
+    - and a parent<sup>\*</sup> of `$source` has a castable extensibility attribute
   - traps unless the operand is an instance of `$target`
 
-* `gcnref.cast_null <schemeidx>` casts and converts `null` or an instance that was constructed as a child<sup>\*</sup> scheme of `$target`
-  - `gcnref.cast_null $target : [gcnref $source] -> [gcnref $target]`
-    - iff `$target` is a `castable` child<sup>\*</sup> of `$source`
+* `gcnref.cast <schemeidx>` casts and converts `null` or an instance of `$target`
+  - `gcnref.cast $target : [(gcnref $source)] -> [(gcnref $target)]`
+    - iff `$target` is a `castable` and `nullable` child<sup>\*</sup> of `$source`
     - and `$source` has a castable extensibility attribute
   - traps unless the operand is `null` or an instance of `$target`
 
-* `gcref.br_or_cast <schemeidx> <labelidx> <labelidx>?` branches if an instance is an instance of `$target` (or if a value is `null`)?
-  - `gcref.br_or_cast $target $l : [gcref $source] -> [gcref $target]`
+* `gcref.br_or_cast <schemeidx> <labelidx>` branches unless an instance is an instance of `$target`
+  - `gcref.br_or_cast $target $l : [(gcnref $source)] -> [(gcref $target)]`
     - iff `$target` is a `castable` child<sup>\*</sup> of `$source`
     - and `$source` has a castable extensibility attribute
-    - and `$l : [gcref $source]`
-  - `gcref.br_or_cast $target $l : [gcnref $source] -> [gcnref $target]`
+    - and `$l : [(gcref $source)]`
+  - branches to `$l` iff the operand is an instance of `$target`
+  - passes cast operand along with branch
+  - traps on `null`
+
+* `gcnref.br_or_cast <schemeidx> <labelidx> <labelidx>` branches to `$l` if an instance is *not* an instance of `$target` or to `$lnull` if a value is `null`?
+  - `gcnref.br_or_cast $target $l $lnull : [(gcnref $source)] -> [(gcref $target)]`
     - iff `$target` is a `castable` child<sup>\*</sup> of `$source`
     - and `$source` has a castable extensibility attribute
-    - and `$target` is `nullable`
-    - and `$l : [gcref $source]`
-  - `gcref.br_or_cast $target $l $lnull : [gcnref $source] -> [gcref $target]`
-    - iff `$target` is a `castable` child<sup>\*</sup> of `$source`
-    - and `$source` has a castable extensibility attribute
-    - and `$l : [gcref $source]`
-    - and `$lnull : [gcnull $target]` (designed so that `$l` and `$lnull` can be same label of type `[gcnref $target]`)
-  - branches to `$l` iff the operand is an instance of `$target` or `$lnull` is omitted and the operand is `null`
-  - branches to `$lnull` iff `$lnull` is specified and the operand is `null`
+    - and `$l : [(gcref $source)]`
+    - and `$lnull : [(gcnull $source)]` (designed so that `$l` and `$lnull` can be same label of type `[(gcnref $source)]`)
+  - branches to `$l` iff the operand is an instance that is *not* an instance of `$target`
+  - branches to `$lnull` iff the operand is `null`
   - passes cast operand along with branch
 
-* `gcref.switch_cast (<schemeidx> <labelidx>)? (<schemeidx> <labelidx>)*` branches to the label corresponding to the most precise scheme of an instance (or to `$lnull` if a value is `null`)?
-  - `gcref.switch_cast $target1 $l1 ... : [gcref $source] -> [gcref $source]`
+* `gcref.switch_cast (<schemeidx> <labelidx>)*` branches to the label corresponding to the most precise scheme of an instance
+  - `gcref.switch_cast $target1 $l1 ... : [(gcnref $source)] -> unreachable`
+    - iff each `$targeti` is a `castable` child<sup>\*</sup> of `$source`
+    - and `$source` has a castable extensibility attribute
+    - and each `$li : [(gcref $targeti)]`
+    - and if any instance can belong to both `$targeti` and `$targetj` with `i < j`, then `$targeti` is a child<sup>+</sup> of `$targetj`
+    - and every `castable` child<sup>\*</sup> of `$source` is guaranteed to be a child<sup>\*</sup> of some `$targeti`
+  - branches to `$li` iff the operand is an instance of `$targeti` and furthermore `i < j` for every `$targetj` that the operand is an instance of
+  - passes cast operand along with branch
+  - traps on `null`
+
+* `gcnref.switch_cast (<schemeidx> <labelidx>)* <schemeidx> <labelidx>` branches to the label corresponding to the most precise scheme of an instance or to `$lnull` if a value is `null`
+  - `gcnref.switch_cast $target1 $l1 ... $tnull $lnull : [gcnref $source] -> unreachable`
     - iff each `$targeti` is a `castable` child<sup>\*</sup> of `$source`
     - and `$source` has a castable extensibility attribute
     - and each `$li : [gcref $targeti]`
-    - and if any `$targeti` are `$targetj1` are potentially the same scheme then `i` equals `j`
-  - `gcref.switch_cast $target1 $l1 ... : [gcref $source] -> unreachable`
-    - iff each `$targeti` is a `castable` child<sup>\*</sup> of `$source`
-    - and `$source` has a castable extensibility attribute
-    - and each `$li : [gcref $targeti]`
-    - and if any `$targeti` are `$targetj1` are potentially the same scheme then `i` equals `j`
-    - and every `castable` child<sup>\*</sup> of `$source` is guaranteed to be a child<sup>\*</sup> of some `$targeti` due to `cases` extensibilities
-  - `gcref.switch_cast $tnull $lnull $target1 $l1 ... : [gcnref $source] -> [gcref $source]`
-    - iff each `$targeti` is a `castable` child<sup>\*</sup> of `$source`
-    - and `$source` has a castable extensibility attribute
-    - and each `$li : [gcref $targeti]`
-    - and if any `$targeti` are `$targetj1` are potentially the same scheme then `i` equals `j`
+    - and if any instance can belong to both `$targeti` and `$targetj` with `i < j`, then `$targeti` is a child<sup>+</sup> of `$targetj`
+    - and every `castable` child<sup>\*</sup> of `$source` is guaranteed to be a child<sup>\*</sup> of some `$targeti`
     - and `$lnull : [gcnull $tnull]`
-  - `gcref.switch_cast $tnull $lnull $target1 $l1 ... : [gcnref $source] -> unreachable`
-    - iff each `$targeti` is a `castable` child<sup>\*</sup> of `$source`
-    - and `$source` has a castable extensibility attribute
-    - and each `$li : [gcref $targeti]`
-    - and if any `$targeti` are `$targetj1` are potentially the same scheme then `i` equals `j`
-    - and every `castable` child<sup>\*</sup> of `$source` is guaranteed to be a child<sup>\*</sup> of some `$targetn` due to `cases` extensibilities
-    - and `$lnull : [gcnull $tnull]`
-  - branches to `$li` iff the operand is an instance of `$targeti` and furthermore every `targetj` that the operand is an instance of is a parent<sup>\*</sup> of `$targeti`
+  - branches to `$li` iff the operand is an instance of `$targeti` and furthermore `i < j` for every `$targetj` that the operand is an instance of
   - branches to `$lnull` iff `$lnull` is specified and the operand is `null`
   - passes cast operand along with branch
 
