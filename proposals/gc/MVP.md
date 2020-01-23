@@ -104,7 +104,7 @@ Attributes describe memory invariants that a garbage collector needs to know abo
 
 In addition to reflexivity and transitivity:
 
-* `gcref $scheme1` is a subtype of `gcref $scheme2` if `$scheme2` is an `implicit` parent of `$scheme1`..
+* `gcref $scheme1` is a subtype of `gcref $scheme2` if `$scheme2` is an `implicit` parent of `$scheme1`.
   - Note: there is no subtyping relation between a child and its `explicit` parent.
 
 * `gcnref $scheme1` is a subtype of `gcnref $scheme2` if `$scheme2` is an `implicit` parent of `$scheme1` (presuming both `$scheme1` and `$scheme2` are `nullable`).
@@ -140,7 +140,7 @@ We choose `construct` rather than `new` to emphasize that the process might not 
 In particular, the appropriate equality attribute might permit the structure to be packed in the pointer rather than allocated on the heap.
 
 In the following, `i32` corresponds to `signed` or `unsigned` fields of `32` bits or less, and `i64` corresponds to `signed` or `unsigned` fields of `64` bits or less.
-Question: what should happen when an `i32` or `i64` is inexpressible in field it is being assigned to?
+Question: what should happen when an `i32` or `i64` is inexpressible by the type of the field it is being assigned to?
 
 * `scheme.construct <schemeidx>` constructs an instance of `$scheme` and initializes its non-field-indexed fields with given values
   - `scheme.construct $scheme : [t*] -> [(gcref $scheme)]`
@@ -155,14 +155,14 @@ Question: what should happen when an `i32` or `i64` is inexpressible in field it
     - and `t*` corresponds to the non-`$field` non-`$field`-indexed fields of `$scheme` followed by the `$field`-indexed fields of `$scheme`
 
 * `scheme.construct_default <schemeidx> <fieldname>*` constructs an instance of `$scheme` and initializes all fields *not* in `$field*` with default values
-  - `scheme.construct_default $scheme : [t*] -> [(gcref $scheme)]`
+  - `scheme.construct_default $scheme $field* : [t*] -> [(gcref $scheme)]`
     - iff `$scheme` is `constructible`
     - and `t*` corresponds to the fields in `$field*`
     - and all fields not in `$field*` have defaultable types
     - and, if a `length` field is in `$field*`, then no fields by that field are in `$field*`
 
 * `scheme.construct_copy <schemeidx> <fieldname>*` constructs an instance of `$scheme` using an instance of a `$source` scheme to initialize the `immutable` fields *not* in `$field*`
-  - `scheme.construct_source $scheme $field* : [(gcref $source) t*] -> [(gcref $scheme)]`
+  - `scheme.construct_copy $scheme $field* : [(gcref $source) t*] -> [(gcref $scheme)]`
     - iff `$scheme` is `constructible`
     - and `t*` corresponds to the fields in `$field*` plus the non-immutable non-field-indexed fields of `$scheme`
     - and `$source` is a parent<sup>\*</sup> of `$scheme`
