@@ -49,7 +49,6 @@ More importantly, fixpoints are all-but-necessary to keep importing and exportin
 
 Both proposals rely on subtyping to support many of the same patterns.
 With regularly coinductive *determinstic* structural types (as in the preexisting proposal), subtyping is known to be O(n<sup>2</sup>).
-With regularly coinductive *non-deterministic* structural types, in particular supporting union types, subtyping is known to be PSPACE-complete.
 With *irregularly* coinductive (deterministic/non-deterministic) structural types, i.e. where fixpoints can be parameterized, subtyping is known to be undecidable.
 The latter two results are important for knowing the limitations on how this approach can be extended.
 
