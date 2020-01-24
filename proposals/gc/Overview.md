@@ -4,9 +4,7 @@
 
 Note: Basic support for simple [reference types](https://github.com/WebAssembly/reference-types/blob/master/proposals/reference-types/Overview.md), for [typed function references proposal](https://github.com/WebAssembly/function-references/blob/master/proposals/function-references/Overview.md), and for [type imports](https://github.com/WebAssembly/proposal-type-imports/blob/master/proposals/type-imports/Overview.md) have been carved out into separate proposals which should become the future basis for this proposal.
 
-See [MVP](MVP.md) for a concrete v1 proposal.
-
-WARNING: Some contents of this document may have gotten out of sync with the [MVP][MVP.md] design.
+See [MVP](MVP.md) for a more formal v1 proposal.
 
 
 ### Motivation
@@ -27,10 +25,14 @@ WARNING: Some contents of this document may have gotten out of sync with the [MV
 * Allocation of data structures that are garbage collected
 * Allocation of byte arrays that are garbage collected
 * Allow heap values from the embedder (e.g. JavaScript objects) that are garbage collected
-* Unboxing of small scalar values
 * Down casts as an escape hatch for the low-level type system
-* Explicit low-level control over all runtime behaviour (no implicit allocation, no implicit runtime types)
 * Modular (no need for shared type definitions etc.)
+
+
+### Desirables
+
+* Unboxing of small scalar values
+* Explicit low-level control over runtime behaviour (no implicit allocation, no implicit runtime types)
 
 
 ### Challenges
@@ -45,26 +47,44 @@ WARNING: Some contents of this document may have gotten out of sync with the [MV
 ### Approach
 
 * Independent from linear memory
-* Low-level *data representation types*, not high-level language types or object model
-* Basic but general structure: tuples (structs), arrays, unboxed scalars
+* Basic but general structure: *data-representation schemes*, not high-level language types or object model
+* Describe schemes at suitable level of abstraction to permit adaptation to engine designs and specialization to hardware platforms when possible
+* Make explicit when schemes must be compatible so that unrelated schemes can be optimized separately rather than requiring a universal representation that works across all schemes
 * Accept minimal amount of dynamic overhead (checked casts) as price for simplicity/universality
 * Pay as you go; in particular, no effect on code not using GC, no runtime type information unless requested
 * Don't introduce dependencies on GC for other features (e.g., using resources through tables)
-* Make runtime type information explicit
 * Extend the design iteratively, ship a minimal set of functionality fast
+
+The proposal relies on the distinction between three concepts, which we refer to as references, addresses, and pointers.
+References are the abstraction provided by WebAssembly.
+Conceptually speaking, they denote an address in memory where the contents of the referenced instance can be found.
+In reality, a reference denotes an engine-specific representation of the data, which for lack of a better term we will call a pointer.
+For example, a pointer implementing a reference to an immutable `float64` on a 64-bit engine employing NaN boxing would often simply be the 64 bits of the `float64` rather than an address.
+On the other hand, a pointer implementing a reference to an immutable `float64` on a 32-bit engine would typically be the address at which the 64 bits of the `float64` can be found in the heap.
+Many languages design their pointers using specialized packing schemes, but these schemes are often dependent on the hardware and the garbage collector at hand, which languages compiling to WebAssembly have no control over.
+As such, this proposal is designed to give the engine the information it needs in order to develop a packing scheme well-suited for that language on the given hardware for the given garbage collector.
+
+Although this proposal makes an effort to keep dynamic checks efficient, in the longer term a full GC proposal would be able to eliminate many of the dynamic checks by utilizing fancier type-system features.
+Many opportunities for these features are noted throughout the proposal.
+Some such features that are known to be useful in low-level type systems are (predicative) universal/existential quantifiers, multi-value types (e.g. recognizing that the values in two different registers exhibit an important relationship), and substructural types (e.g. linear/affine types).
+The current formulation of WebAssembly relies heavily on norms that these features would violate, and so for the MVP we opted to employ dynamic checks in any situation that was known to necessitate one or more of these features.
+At the same time, we made an effort to design the MVP to be forward compatible with such features.
 
 
 ### Types
 
-The sole purpose of the Wasm type system is to describe low-level data layout, in order to aid the engine compiling its access efficiently. It is *not* designed or intended to catch errors in a producer or reflect richer semantic behaviours of a source language's type system, such as distinguishing the types of data structures that have the same layout but are intended to be distinguished in the source language (e.g., different classes).
+The sole purpose of the Wasm type system is to describe low-level data layout, in order to aid the engine compiling its access efficiently.
+It is *not* designed or intended to catch errors in a producer or reflect richer semantic behaviours of a source language's type system.
 
-This is true for the types in this proposal as well. The introduction of managed data adds new forms of types that describe the layout of memory blocks on the heap, so that the engine knows, for example, the type of a struct being accessed, avoiding any runtime check or dispatch. Likewise, it knows the result type of this access, such that consecutive uses of the result are equally check-free. For that purpose, the type system does little more than describing the *shape* of such data.
+This is true for the types in this proposal as well.
+The introduction of managed data adds new forms of types that describe the layout of memory blocks on the heap so that the engine knows, for example, the type of an instance being accessed, avoiding any run-time check or dispatch.
+Likewise, it knows the result type of this access, enabling subsequent uses of the result to also be check-free.
+For that purpose, the type system does little more than describing the *shape* of such data.
 
 
 ### Potential Extensions
 
 * Safe interaction with threads (sharing, atomic access)
-* Forming unions of different types, as value types?
 * Direct support for strings?
 * Defining, allocating, and indexing structures as extensions to imported types?
 
@@ -77,9 +97,7 @@ GC support should maintain Wasm's efficiency properties as much as possible, nam
 * structures are contiguous, dense chunks of memory
 * field accesses are single-indirection loads and stores
 * allocation is fast
-* no implicit allocation on the heap (e.g. boxing)
-* primitive values should not need to be boxed to be stored in managed data structures
-* unboxed scalars are interchangeable with references
+* references should be packable whenever possible in the high-level language
 * allows ahead-of-time compilation and code caching
 
 
@@ -87,441 +105,103 @@ GC support should maintain Wasm's efficiency properties as much as possible, nam
 
 Example languages from three categories should be successfully implemented:
 
-* an object-oriented language with nominal subtyping (e.g., a subset of Java, with classes, inheritance, interfaces)
-* a typed functional language (e.g., a subset of ML, with closures, polymorphism, variant types)
+* an [object-oriented language with nominal subtyping](NomOO.md) (e.g., a subset of Java, with classes, inheritance, interfaces)
+* a [typed functional language](TypedFun.md) (e.g., a subset of ML, with closures, polymorphism, variant types)
 * an untyped language (e.g., a subset of Scheme or Python or something else)
 
 
 ## Use Cases
 
-### Structs and Arrays
-
-* Want to represent first-class tuples/records/structs with static indexing
-* Want to represent arrays with dynamic indexing
-* Possibly want to create arrays with either fixed or dynamic length
-
-Examples (fictional language):
-```
-type tup = (int, int, bool)
-type vec3d = float[3]
-type buf = {var pos : int, chars : char[]}
-
-function f() {
-  let t : tup = (1, 2, true)
-  t.1
-}
-
-function g() {
-  let v : vec3d = [1, 1, 5]
-  v[1]
-}
-
-function h() {
-  let b : nullable buf = {pos = 0, chars = "AAAA"}
-  b.buf[b.pos]
-}
-```
-
-Needs:
-
-* user-defined structures and arrays as heap objects
-* references to those as first-class values
-* let
-
-The above could map to
-```
-(type $tup (struct i64 i64 i32))
-(type $vec3d (array (mut f64)))
-(type $char-array (array (mut i8)))
-(type $buf (struct (field $pos (mut i64)) (field $chars (ref $char-array))))
-
-(func $f
-  (struct.new $tup (i64.const 1) (i64.const 2) (i64.const 1))
-  (let (local $t (ref $tup))
-    (struct.get $tup 1 (local.get $t))
-    (drop)
-  )
-)
-
-(func $g
-  (array.new $vec3d (i64.const 1) (i32.const 3))
-  (let (local $v (ref $vec3d))
-    (array.set $vec3d (local.get $v) (i32.const 2) (i32.const 5))
-    (array.get $vec3d (local.get $v) (i32.const 1))
-    (drop)
-  )
-)
-
-(func $h
-  (local $b (optref $buf))
-  (local.set $b
-    (struct.new $buf
-      (i64.const 0)
-      (array.new $char-array (i32.const 4) (i32.const 0x41))
-    )
-  )
-  (array.get $buf
-    (struct.get $buf $chars (local.get $b))
-    (struct.get $buf $pos (local.get $b))
-  )
-  (drop)
-)
-```
-These functions `$f` and `$g` code introduces local with the `let` instruction (see the [typed function references proposal](https://github.com/WebAssembly/function-references/blob/master/proposals/function-references/Overview.md)) because the defined types cannot be null, such that locals of these types cannot be default-initialised.
-In the case of `$h` the local is declared as nullable, however, mapping to an optional reference.
-The respective access via `struct.get` may hence trap.
-
-
-### Objects and Method Tables
-
-* Want to represent objects as structures, whose first field is the method table
-* Want to represent method tables themselves as structures, whose fields are function pointers
-* Subtyping is relevant, both on instance types and method table types
-
-Example (Java-ish):
-```
-class C {
-  int a;
-  void f(int i);
-  int g();
-}
-class D extends C {
-  double b;
-  override int g();
-  int h();
-}
-```
-
-```
-(type $f-sig (func (param (ref $C)) (param i32)))   ;; first param is `this`
-(type $g-sig (func (param (ref $C)) (result i32)))
-(type $h-sig (func (param (ref $D)) (result i32)))
-
-(type $C (struct (ref $C-vt) (mut i32))
-(type $C-vt (struct (ref $f-sig) (ref $g-sig)))    ;; all immutable
-(type $D (struct (ref $D-vt) (mut i32) (mut f64))) ;; subtype of $C
-(type $D-vt (struct (extend $C-vt) (ref $h-sig)))  ;; immutable, subtype of $C-vt
-```
-
-(Note: the use of `extend` in this example and others is assumed to be simple syntactic sugar for expanding the referenced structure type in place; there may be no `extend` construct in the abstract syntax or binary format; subtyping is meant to defined [structurally](#subtyping).)
-
-Needs:
-
-* (structural) subtyping
-* immutable fields (for sound subtyping)
-* universal type of references
-* down casts
-* dynamic linking might add a whole new dimension
-
-To emulate the covariance of the `this` parameter, one down cast on `this` is needed in the compilation of each method that overrides a method from a base class.
-For example, `D.g`:
-```
-(func $D.g (param $Cthis (ref $C))
-  (ref.cast (local.get $Cthis) (rtt.get (ref $D)))
-  (let (local $this (ref $D))
-    ...
-  )
-)
-```
-The addition of [type parameters and fields](#type-parameters-and-fields) may later avoid this cast.
-
-
-### Closures
-
-* Want to associate a code pointer and its environment in a GC-managed object
-* Want to allow compiler of source language to choose appropriate environment representation
-
-Example:
-```
-function outer(x : float) : float -> float {
-  let a = x + 1.0
-  function inner(y : float) {
-    return y + a + x
-  }
-  return inner
-}
-
-function caller() {
-  return outer(1.0)(2.0)
-}
-```
-
-```
-(type $code-f64-f64 (func (param $env (ref $clos-f64-f64)) (param $y f64) (result f64)))
-(type $clos-f64-f64 (struct (field $code (ref $code-f64-f64)))
-(type $inner-clos (struct (extend $clos-f64-f64) (field $x f64) (field $a f64))
-
-(func $outer (param $x f64) (result (ref $clos-f64-f64))
-  (struct.new $inner-clos
-    (ref.func $inner)                       ;; code
-    (local.get $x)                          ;; x
-    (f64.add (local.get $x) (f64.const 1))  ;; a
-  )  ;; (ref $clos-f64-f64) by subtyping
-)
-
-(func $inner (param $clos (ref $clos-f64-f64)) (param $y f64) (result f64)
-  (ref.cast (local.get $clos) (rtt.get (ref $inner-clos)))
-  (let (result f64) (local $env (ref $inner-clos))
-    (local.get $y)
-    (struct.get $inner-clos $a (local.get $env))
-    (f64.add)
-    (struct.get $inner-clos $x (local.get $env))
-    (f64.add)
-  )
-)
-
-(func $caller (result f64)
-  (call $outer (f64.const 1))
-  (let (result f64) (local $clos (ref $clos-f64-f64))
-    (call_ref
-      (local.get $clos)
-      (f64.const 2)
-      (struct.get $clos-f64-f64 $code (local.get $clos))
-    )
-  )
-)
-```
-
-Needs:
-* function pointers
-* (mutually) recursive function types
-* down casts
-
-The down cast for the closure environment is necessary to go from the abstract closure type to the concrete.
-Statically type checking this would require (first-class) [type fields](#type-parameters-and-fields), a.k.a. existential types.
-
-Note that this example shows just one way to represent closures (with flattened closure environment).
-The proposal provides all necessary primitives allowing high-level language compilers to choose other representations.
-
-An alternative is to provide [primitive support](#closures) for closures, e.g. a partial application operator.
-
-
-### Parametric Polymorphism
-
-* Dynamic languages or static languages with sufficiently expressive parametric polymorphism (generics) often require a *uniform representation*, where all its data types are represented in a single word.
-* Typically, pointer tagging is used to unbox small scalars.
-* Want to be able to represent this with type `anyref`.
-
-Contrived example (fictional language):
-```
-function make_pair<A, B>(a : A, b : B) : (A, B) {
-  return (a, b);
-}
-
-class C {...};
-function f() {
-  ...
-  make_pair<Bool, Bool>(true, false)
-  ...
-  make_pair<C, C>(new C, new C)
-  ...
-}
-
-function fst<A>(p : (A, A)) : A { let (a, _) = p; return a }
-function snd<A>(p : (A, A)) : A { let (_, a) = p; return a }
-
-function g(p1 : (Bool, Bool), p2 : (C, C), pick : <A> ((A, A)) -> A) : C {
-  if (pick<Bool>(p1))
-    return pick<C>(p2);
-  else
-    return new C;
-}
-```
-
-Here, `make_pair` as well as `fst` and `snd` need to be able to operate on any type of pair. Furthermore, `fst` and `snd` cannot simply be type-specialised at compile time, because that would be insufficient to compile `g`, which takes a polymorphic function as an argument and instantiates it with multiple different types. Such *first-class* polymorphism is not expressible with compile time techniques such as C++ templates, but common-place in many languages (including OO ones like Java or C#, where it can be emulated via generic methods). Untyped languages like JavaScript or Scheme trivially allow such programs as well.
-
-The problem is that the compilation of `fst` and `snd` must not depend on the type they are instantiated with because with first-class polymorphism it is not generally possible to tell, at compile time, the set of all such types (static analysis can do that in many cases but not all).
-Unless willing to implement runtime code specialisation (like C# / .NET) a type-agnostic compilation scheme is necessary.
-
-The usual implementation technique is a uniform representation, potentially refined with local unboxing and type specialisation optimisations.
-
-The MVP proposal does not directly support parametric polymorphism (see the discussion of [type parameters and fields](#type-parameters-and-fields) below for its discussion as an extension).
-However, compilation with a uniform representation can still be achieved in this proposal by consistently using the type  `anyref`, which is the super type of all references, and then down-cast from there:
-```
-(type $pair (struct anyref anyref))
-
-(func $make_pair (param $a anyref) (param $b anyref) (result (ref $pair))
-  (struct.new $pair (local.get $a) (local.get $b))
-)
-
-
-(type $C (struct ...))
-
-(func $new_C (result (ref $C)) ...)
-(func $f
-  ...
-  (call $make_pair (i31.new 1) (i31.new 0))
-  ...
-  (call $make_pair (call $new_C) (call $new_C))
-  ...
-)
-
-(func $fst (param $p (ref $pair)) (result anyref)
-  (struct.get $pair 0 (get_local $p))
-)
-(func $snd (param $p (ref $pair)) (result anyref)
-  (struct.get $pair 1 (get_local $p))
-)
-
-(type $pick (func (param $pair) (result anyref)))
-(func $g
-  (param $p1 (ref $pair)) (param $p2 (ref $pair)) (param $pick (ref $pick))
-  (result (ref $C))
-  (if (i31.get_u (ref.cast (call_ref $pick (local.get $p1))) (rtt.get i31ref))
-    (then (ref.cast (call_ref $pick (local.get $p2)) (rtt.get (ref $C))))
-    (else (call $new_C))
-  )
-)
-```
-Note how type [`i31ref`](#tagged-integers) avoids Boolean values to be heap-allocated.
-Also note how a down cast is necessary to recover the original type after a value has been passed through (the compiled form of) a polymorphic function like `g` -- the compiler knows the type but Wasm does not.
-
-(Future versions of Wasm should support [type parameters](#type-parameters-and-fields) to make such use cases more efficient and avoid the excessive use of runtime types to compile source language polymorphism, but for the GC MVP this provides the necessary expressiveness.)
-
-Needs:
-* `anyref`
-* `i31ref`
-* down casts
-
-
-## Basic Functionality: Simple Aggregates
-
-* Extend the Wasm type section with type constructors to express aggregate types
-* Extend the value types with new constructors for references (split out into [reference types](https://github.com/WebAssembly/reference-types/blob/master/proposals/reference-types/Overview.md) and [typed function references proposal](https://github.com/WebAssembly/function-references/blob/master/proposals/function-references/Overview.md) proposals)
-
-
-### Structures
-
-*Structure* types define aggregates with _heterogeneous fields_ that are _statically indexed_:
-```
-(type $time (struct (field i32) (field f64)))
-(type $point (struct (field $x f64) (field $y f64) (field $z f64)))
-```
-Such types can be used by forming [typed reference types](https://github.com/WebAssembly/function-references/blob/master/proposals/function-references/Overview.md), which are a new form of value type.
-Fields are *accessed* with generic load/store instructions that take a reference to a structure.
-For example:
-```
-(func $f (param $p (ref $point))
-  (struct.set $point $y (local.get $p)
-    (struct.get $point $x (local.get $p))
-  )
-)
-```
-All accesses are type-checked at validation time.
-The structure operand of `struct.get/set` may either be a `ref` or an `optref` for a structure type
-In the latter case, the access involves a runtime null check that will trap upon failure.
-
-Structures are *allocated* with the `struct.new` instruction that accepts initialization values for each field.
-The operator yields a reference to the respective type:
-```
-(func $g
-  (call $f (struct.new $point (i32.const 1) (i32.const 2) (i32.const 3)))
-)
-```
-Structures are *managed* -- i.e., garbage-collected -- so manual deallocation is neither required nor possible.
-
-
-### Arrays
-
-*Array* types define aggregates with _homogeneous elements_ that are _dynamically indexed_:
-```
-(type $vector (array (mut f64)))
-(type $matrix (array (type $vector)))
-```
-Array types are used by forming reference types.
-For now, we assume that all array types have a ([flexible](#flexible-aggregates)) length dynamically computed at allocation time.
-
-Elements are accessed with generic load/store instructions that take a reference to an array:
-```
-(func $f (param $v (ref $vector))
-  (array.get $vector (local.get $v) (i32.const 1)
-    (array.set $vector (local.get $v) (i32.const 2))
-  )
-)
-```
-The element type of every access is checked at validation time.
-The array operand of `array.get/set` may either be a `ref` or an `optref` for an array type
-In the latter case, the access involves a runtime null check that will trap upon failure.
-The index is checked against the array's length at execution time.
-A trap occurs if the index is out of bounds.
-
-Arrays are *allocated* with the `array.new` instruction that takes a length and an initialization value as operands, yielding a reference:
-```
-(func $g
-  (call $f (array.new $vector (i32.const 0) (f64.const 3.14)))
-)
-```
-
-The *length* of an array, i.e., the number of elements, can be inquired via the `array.len` instruction:
-```
-(array.len $vector (local.get $v))
-```
-
-Like structures, arrays are garbage-collected.
-
-
-### Packed Fields
-
-Structure and array fields can have a packed *storage type* `i8` or `i16`:
-```
-(type $s (struct (field $a i8) (field $b i16)))
-(type $buf (array i8))
-```
-Loads of packed fields require a sign extension mode:
-```
-(struct.get_s $s $a (...))
-(struct.get_u $s $a (...))
-(array.get_s $s $a (...))
-(array.get_u $s $a (...))
-```
-
-
-### Mutability
-
-Fields can either be immutable or *mutable*:
-```
-(type $s (struct (field $a (mut i32)) (field $b i32)))
-(type $a (array (mut i32)))
-```
-Store operators are only valid when targeting a mutable field or element.
-Immutable fields can only be stored to as part of an allocation.
-
-Immutability needs to be distinguished in order to enable safe and efficient [subtyping](#subtyping), especially as needed for the [objects](#objects-and-method-tables) use case.
-
-
-### Reference Equality
-
-References can be compared for identity:
-```
-(ref.eq (struct.new $point ...) (struct.new $point ...))  ;; false
-```
-The `ref.eq` instruction expects two operands of type `eqref`, which is a subtype of `anyref` and the supertype of all reference types that support equality checks.
-That includes structure and array references as well as [tagged integers](#tagged-integers), but not function references.
+### Support for GC Languages
+
+* an [object-oriented language with nominal subtyping](NomOO.md) (e.g., a subset of Java, with classes, inheritance, interfaces)
+* a [typed functional language](TypedFun.md) (e.g., a subset of ML, with closures, polymorphism, variant types)
+
+### Inter-Module Sharing (Interface Types)
+
+TBD
+
+### JavaScript Interop
+
+TBD
+
+### Capabilities (WASI)
+
+TBD
+
+
+## Basic Functionality
+
+* Extend the Wasm type section with schemes to express simple data structures and compatibility requirements
+* Extend the value types with new constructors for references to instances of schemes
+
+
+### Schemes
+
+Every scheme specifies a number of attributes, such as the fields describing the data in the scheme, compatibility requirements with other schemes, and the ability to extend the scheme.
+From this information, the engine generates an in-memory representation for the scheme and a packed-pointer representation for the scheme.
+The values of type `gcref $scheme` are packed-pointer representations of instances of `$scheme`.
+If the scheme is `nullable`, then the values of type `gcnref $scheme` are packed-pointer representations of instances of `$scheme` or of `null`.
+
+
+### Compatibility
+
+A scheme can specify a `parent` that it must be compatible with.
+This parent can be an `explicit` parent, meaning only the in-memory representations must be compatible.
+Or this parent can be an `implicit` parent, meaning also the packed-pointer representations must be compatible so that `gcref $child` is a subtype of `gcref $parent`.
+There are a number of restrictions relating the attributes of a child with its parent to ensure that compatibility is possible to begin with.
+
+
+### Fields
+
+A scheme can specify a number of fields.
+
+Each field has name, which is only used for compile-time coordination and has no other run-time significance.
+
+Each field has a type that its corresponding value in any given instance must have.
+
+Each field specifies whether it is `readable` and whether it is `writable`.
+
+A field might specify a mutation attribute that specifies how the field can change over time.
+Currently the options are `mutable`, `immutable`, and `initializable`.
+The last indicates that the field can only be changed from its default value&mdash;once it has a non-default value, it cannot be changed.
+
+A scheme can have one appropriately typed `immutable` field specified as its `length`, thereby making the scheme represent an array rather than just a tuple.
+A field can be declared to be `indexed` by same value or `length` field, in which case it has a value for each non-negative index strictly less than the given value or the instance's value of the specified `length` field.
+The accessor and mutator instructions for `indexed` fields corresponding require an additional run-time argument indicating the index to access or mutate.
+
+
+### Casting and Extension
+
+Due to compatibility, an instance can belong to multiple schemes.
+If the relevant schemes permit, the instance has run-time information that can be used to cast an instance from a less-precise scheme to a more-precise scheme.
+Each scheme can describe how it can be cast and extended.
+Every castable scheme has some corresponding run-time indicator, which might be part of the packed-pointer representation or part of the in-memory representation.
+How casting is implemented is significantly affected by how schemes can be extended:
+* An `explicit` extensible scheme can only have `explicit` children, which means that no child can influence the packed-pointer representation of the scheme.
+* A `flat` extensible scheme limits casting so that casting can be implemented by just an arithmetic comparison to the run-time indicator of the target scheme.
+* A `hierarchical` extensible scheme includes a casting table in the in-memory representation to enable arbitrary constant-time casts.
+* A `cases $child*` extensible scheme explicitly lists its only permitted child schemes.
 
 
 ### Nullability & Defaultability
 
 These notions are already introduced by [typed function references](https://github.com/WebAssembly/function-references/blob/master/proposals/function-references/Overview.md) and carry over to the new forms of reference types in this proposal.
 
-Plain references cannot be null,
-avoiding any runtime overhead for null checks when accessing a struct or array.
-Nullable references are available as separate types called `optref`, as per the .
+Plain references cannot be null, avoiding any runtime overhead for null checks when accessing a struct or array.
+Nullable references are available via a separate type constructor called `gcnref`, which is only permitted for schemes that are declared to be nullable.
 
 Most value types, including all numeric types and nullable references are *defaultable*, which means that they have 0 or null as a default value.
 Other reference types are not defaultable.
 
-Allocations of aggregates with non-defaultable fields or elements must have initializers.
 
-Objects whose members all have _mutable_ and _defaultable_ type may be allocated without initializers:
-```
-(type $s (struct (field $a (mut i32)) (field (mut (ref $s)))))
-(type $a (array (mut f32)))
+### Reference Equality
 
-(struct.new_default $s)
-(array.new_default $a (i32.const 100))
-```
-
-TODO (post-MVP): How to create interesting immutable arrays?
+A scheme can define the notions of equality it supports.
+`identity` equality is used to enable address comparison.
+`deep` equality is used to enable packing instances of small schemes into the packed-pointer representation.
+`case` equality is used to define equality case-wise according to its `cases`.
+In the common case, equality can be checked by just shallowly comparing the packed-pointer representations without requiring any loads from memory.
 
 
 ### Sharing
@@ -582,84 +262,16 @@ Values of function reference type are formed with the `ref.func` operator:
 (func $h (param i32) ...)
 ```
 
-### Unboxed Scalars
-
-Efficient implementations of untyped languages or languages with [polymorphism](#parametric-polymorphism) often rely on a _uniform representation_, meaning that all values are represented in a single machine word -- usually a pointer.
-At the same time, they want to avoid the cost of boxing as much as possible, by passing around small scalar values (such as bools, enums, characters, small integer types) unboxed and using a tagging scheme to distinguish them from pointers in the GC.
-
-To implement any such language efficiently, Wasm needs to provide such a mechanism. This proposal therefor introduces a built-in reference type `i31ref` that can be implemented in an engine via tagged integers. Producers may use this type to request unboxing for scalars.
-
-There are only three instructions for converting from and to this reference type:
-```
-i31.new : [i32] -> [i31ref]
-i31.get_u : [i31ref] -> [i32]
-i31.get_s : [i31ref] -> [i32]
-```
-The first is essentially a "tag" instruction, while the other two are two variants of the inverse "untag" operation, either with or without sign extension to 32 bits.
-
-Being reference types, unboxed scalars can be cast into `anyref`, and can participate in runtime type checks and dispatch with `ref.cast` or `br_on_cast`.
-
-To avoid portability hazards, the value range of `i31ref` has to be restricted to at most 31 bits, since that is the widest range that can be guaranteed to be efficiently representable on all platforms.
-
-Note: As a future extension, Wasm could also introduce wider integer references, such as `i32ref`. However, these sometimes will have to be boxed on some platforms, introducing the unpredictable cost of possible "hidden" allocation upon creation or branching upon access. They hence serve a different use case. Note also that such values can already equivalently be expressed in this proposal as structs with a single `i32` field, which implementations may choose to optimise accordingly (singleton structs that have no [runtime type information](#casting-and-runtime-types) can be flattened by engines).
-
 
 ## Type Structure
 
 ### Type Grammar
 
-The overall type syntax can be captured in the following grammar:
-```
-num_type       ::=  i32 | i64 | f32 | f64
-ref_type       ::=  (ref <cons_type>)
-cons_type      ::=  opt? <typeidx> | i31 | func | eq | any | null
-value_type     ::=  <num_type> | <ref_type>
-
-packed_type    ::=  i8 | i16
-storage_type   ::=  <value_type> | <packed_type>
-field_type     ::=  <storage_type> | (mut <storage_type>)
-
-data_type      ::=  (struct <field_type>*) | (array <field_type>)
-func_type      ::=  (func <value_type>* <value_type>*)
-def_type       ::=  <data_type> | <func_type>
-```
-where `value_type` is the type usable for parameters, local variables and the operand stack, and `def_type` describes the types that can be defined in the type section.
-
-
-### Type Recursion
-
-Through references, aggregate types can be *recursive*:
-```
-(type $list (struct (field i32) (field (ref $list))))
-```
-Mutual recursion is possible as well:
-```
-(type $tree (struct (field i32) (field (ref $forest))))
-(type $forest (struct (field (ref $tree)) (field (ref $forest))))
-```
-
-The [type grammar](#type-grammar) does not make recursion explicit. Semantically, it is assumed that types can be infinite regular trees by expanding all references in the type section, as is standard.
-Folding that into a finite representation (such as a graph) is an implementation concern.
-
-
-### Type Equivalence
-
-In order to avoid type incompatibilities at module boundaries,
-all types are structural.
-Aggregate types are considered equivalent when the unfoldings of their definitions are (note that field names are not part of the actual types, so are irrelevant):
-```
-(type $pt (struct (i32) (i32) (i32)))
-(type $vec (struct (i32) (i32) (i32)))  ;; vec = pt
-```
-This extends to nested and recursive types:
-```
-(type $t1 (struct (type $pt) (ptr $t2)))
-(type $t2 (struct (type $pt) (ptr $t1)))  ;; t2 = t1
-(type $u (struct (type $vec) (ptr $u)))   ;; u = t1 = t2
-```
-Note: This is the standard definition of recursive structural equivalence for "equi-recursive" types.
-Checking it is computationally equivalent to checking whether two DFAs are equivalent, i.e., it is a non-trivial algorithm (even though most practical cases will be trivial).
-This may be a problem, in which case we need to fall back to a more restrictive definition, although it is unclear what exactly that would be.
+The overall type syntax is extended with three types: `gcref <schemeidx>`, `gcnref <schemeidx>`, and `gcnull <schemeidx>`.
+These types reference schemes, which are defined through a series of attributes using a syntax defined in the [MVP](MVP.md).
+The types `gcnref $scheme` and `gcnull $scheme` are only valid when `$scheme` is declared to be `nullable`.
+Note that there is no need for type recursion in this proposal.
+And while schemes can reference each other recursively, this recursion is nominal, which greatly simplifies the definition of and algorithms for the type system.
 
 
 ### Subtyping
@@ -667,112 +279,18 @@ This may be a problem, in which case we need to fall back to a more restrictive 
 Subtyping is designed to be _non-coercive_, i.e., never requires any underlying value conversion.
 
 The subtyping relation is the reflexive transitive closure of a few basic rules:
-
-1. The `anyref` type is a supertype of every reference type (top reference type).
-2. The `funcref` type is a supertype of every function type.
-3. A structure type is a supertype of another structure type if its field list is a prefix of the other (width subtyping).
-4. A structure type also is a supertype of another structure type if they have the same fields and for each field type:
-   - The field is mutable in both types and the storage types are the same.
-   - The field is immutable in both types and their storage types are in (covariant) subtype relation (depth subtyping).
-5. An array type is a supertype of another array type if:
-   - Both element types are mutable and the storage types are the same.
-   - Both element types are immutable and their storage types are in
-(covariant) subtype relation (depth subtyping).
-6. A function type is a supertype of another function type if they have the same number of parameters and results, and:
-   - For each parameter, the supertype's parameter type is a subtype of the subtype's parameter type (contravariance).
-   - For each result, the supertype's parameter type is a supertype of the subtype's parameter type (covariance).
-
-Note: Like [type equivalence](#type-equivalence), (static) subtyping is *structural*.
-The above is the standard (co-inductive) definition, which is the most general definition that is sound.
-Checking it is computationally equivalent to checking whether one DFA recognises a sublanguage of another DFA, i.e., it is a non-trivial algorithm (even though most practical cases will be trivial).
-Like with type equivalence, this may be a problem, in which case a more restrictive definition might be needed.
-
-Subtyping could be relaxed such that mutable fields and elements could be subtypes of immutable ones.
-That would simplify creation of immutable objects, by first creating them as mutable, initialize them, and then cast away their constness.
-On the other hand, it means that immutable fields can still change, preventing various access optimizations.
-Another alternative would be a three-point mutability lattice with readonly as a top value and mutable and immutable as two incomparable smaller values.
-
-
-### Casting and Runtime Types
-
-The Wasm type system is intentionally simple.
-That implies that it cannot be expressive enough to track all type information that is available in a source program.
-To allow producers to work around the inevitable limitations of the type system, down casts have to provided as an "escape hatch".
-For example, that allows the use of type `anyref` to represent reference values whose type is not locally known.
-When such a value is used in a context where the producer knows its real type, it can use a down cast to recover it.
-
-For safety, down casts have to be checked at runtime by the engine. Down casts hence need a runtime representation of Wasm types: runtime types (RTT). To avoid hidden cost and make RTTs optional when not needed, all runtime types are explicit operand values (*witnesses*). For example:
-```
-(ref.cast (<operand>) (<rtt>))
-```
-This instruction checks whether the runtime type stored in `<operand>` is a runtime subtype of the runtime type represented by the second operand.
-
-In order to cast down the type of a struct or array, the aggregate itself must be equipped with a suitable RTT. Attaching runtime type information to aggregates happens at allocation time but is optional. If no RTT is attached then their runtime type is treated as if it was `anyref` and a down cast to a more specific type will fail. Such aggregates can prevent client code from rediscovering their real type, enforcing a form of parametricity. They can also be optimised more aggressively (e.g., via flattening optimisations), since the VM knows that any possible additional fields forgotten via subtyping can never be rediscovered.
-
-A runtime type is an expression of type `rtt <type>`, which is another form of opaque reference type. It represents the static type `<type>` at runtime.
-In its plain form, a runtime type is obtained using the instruction `rtt.get`
-```
-(rtt.get <type>)
-```
-For example, this can be used to cast down from `anyref` to a concrete type:
-```
-(ref.cast (<operand>) (rtt.get <type>))
-```
-
-More generally, runtime type checks can verify a subtype relation between runtime types.
-In order to make these checks cheap, runtime subtyping follows a *nominal* semantics. To that end, every RTT value may not only represents a given type, it can also record a subtype relation to another (runtime) type (possibly `anyref`) defined when constructing the RTT value:
-```
-(rtt.sub <type> (<rtt>))
-```
-This creates a new witness for `<type>` and defines it to be a subtype of the runtime type expressed by `<rtt>`.
-Validation ensures that `<type>` is a static subtype of the type denoted by `<rtt>`. Consequently, runtime subtyping is always a subrelation of static subtyping, as required for soundness.
-
-The above form of cast traps in case of a type mismatch. This form is useful when using casts to work around limitations of the Wasm type system, in cases where the producer knows that it will succeed.
-
-Another variant of down cast avoids the trap:
-```
-(br_on_cast $label (<operand>) (<rtt>))
-```
-This branches to `$label` if the check is successful, with the operand as an argument, but using its refined type. Otherwise, the operand remains on the stack. By chaining multiple of these instructions, runtime type analysis ("typecase") can be implemented:
-```
-(block $l1 (result (ref $t1))
-  (block $l2 (result (ref $t2))
-    (block $l3 (result (ref $t3))
-      (local.get $operand)  ;; has type (ref $t)
-      (br_on_cast $l1 (ref $t) (ref $t1) (rtt.get (ref $t1)))
-      (br_on_cast $l2 (ref $t) (ref $t2) (rtt.get (ref $t2)))
-      (br_on_cast $l3 (ref $t) (ref $t3) (rtt.get (ref $t3)))
-      ... ;; (ref $t) still on stack here
-    )
-    ... ;; (ref $t3) on stack here
-  )
-  ... ;; (ref $t2) on stack here
-)
-... ;; (ref $t1) on stack here
-```
-
-There are a number of reasons to make RTTs explicit:
-
-* It makes all data and cost (in space and time) involved in casting explicit, which is a desirable property for an "assembly" language.
-
-* It allows to make RTT information optional: for example, structs that are not involved in any casts do not need to pay the overhead of carrying runtime type information (depending on specifics of the GC implementation strategy). For some languages that may mean that they never need to introduce any RTTs.
-
-* Most importantly, making RTTs explicit separates the concerns of casting from Wasm-level polymorphism, i.e., [type parameters and fields](#type-paraemters-and-fields). Type parameters can thus be treated as purely a validation artifact with no bearing on runtime. This property, known as parametricity, drastically simplifies the implementation of such type parameterisation and avoids the substantial hidden costs of reified generics that would otherwise hvae to be paid for every single use of type parameters (short of non-trivial cross-procedural dataflow analysis in the engine).
+1. `gcref $scheme1` is a subtype of `gcref $scheme2` if `$scheme2` is an `implicit` parent of `$scheme1`
+  - Note: there is no subtyping relation between a child and its `explicit` parent
+2. `gcnref $scheme1` is a subtype of `gcnref $scheme2` if `$scheme2` is an `implicit` parent of `$scheme1` (presuming both `$scheme1` and `$scheme2` are `nullable`)
+  - Note: there is no subtyping relation between a child and its `explicit` parent.
+3. `gcref $scheme` is a subtype of `gcnref $scheme` (presuming `$scheme` is `nullable`)
+4. `gcnull $scheme` is a subtype of `gcnref $scheme` (presuming `$scheme` is `nullable`)
+5. `gcnull $scheme1` is a subtype of `gcnull $scheme2` if `$scheme2` is an `implicit` parent or child of `$scheme1` (presuming both `$scheme1` and `$scheme2` are `nullable`)
 
 
 ### Import and Export
 
-Types can be exported from and imported into a module:
-```
-(type (export "T") (type (struct ...)))
-(type (import "env" "T"))
-```
-
-Imported types are essentially parameters to the module.
-As such, they are entirely abstract, as far as compile-time validation is concerned.
-The only operations possible with them are those that do not require knowledge of their actual definition or size: primarily, passing and storing references to such types.
-
-TODO: The ability to import types makes the type and import sections interdependent. We may also need to express constraints on an imported type's representation in order to be able to generate code without knowledge of the imported types.
+To do in detail. The high-level idea is one can import/export a scheme with required/exposed attributes. Such attributes include `parent` attributes, which would enable one to import/export multiple schemes and demand/ensure that they are related.
 
 
 ## Possible Extension: Nesting
@@ -815,104 +333,6 @@ Two main challenges arise:
 * Aggregate objects, especially arrays, can nest arbitrarily. At each nesting level, they may introduce arbitrary mixes of pointer and non-pointer representations that the GC must know about. An efficient solution requires that the GC interprets (an abstraction of) the type structure. More advanced optimisations involve dynamic code generation.
 
 
-### Basic Nesting
-
-* Aggregate types can be field types.
-* They are flattened, i.e., nesting describes one flat value in memory; references enforce boxing.
-
-```
-(type $colored-point (struct (field $p (type $point)) (field $col (i16))))
-```
-Here, `type $point` refers to the previously defined `$point` structure type.
-
-
-### Interior References
-
-Interior References are another form of value type:
-```
-(local $ip (inref $point))
-```
-Interior references can point to embedded aggregates, while regular ones cannot.
-Every regular reference can be converted into an interior reference (but not vice versa) [details TBD].
-
-
-### Access
-
-* All access operators are also valid on interior references.
-
-* If a loaded structure field or array element has aggregate type itself, it yields an interior reference to the respective aggregate type, which can be used to access the nested aggregate:
-  ```
-  (struct.get $point $y (struct.get $colored-point $p (<some colored point>)))
-  ```
-
-* It is not possible to store to a field or element that has aggregate type.
-  Writing to a nested structure or array requires combined uses of `struct,get`/`array.get` to acquire the interior reference and `struct.set`/`array.set` to its contents:
-  ```
-  (struct.set $color-point $x
-    (struct.get $color-point $p (...some $color-point...))
-    (f64.const 1.2)
-  )
-  ```
-
-An engine should be able to optimise away intermediate interior pointers very easily.
-
-TODO: What is the form of the allocation instruction for aggregates that nest others, especially wrt field initializers?
-
-
-### Fixed Arrays
-
-Arrays can only be nested into other aggregates if they have a *fixed* length.
-Fixed arrays are a second version of array type that has a length (expressed as a constant expression) in addition to an element type:
-```
-(type $a (array i32 (i32.const 100)))
-```
-
-TODO: The ability to use constant expressions makes the type, global, and import sections interdependent.
-
-
-### Flexible Aggregates
-
-Arrays without a static length are called *flexible*.
-Flexible aggregates cannot be used as a normal field or element type.
-
-However, it is a common pattern to define structs that end in an array of dynamic length.
-To support this, flexible arrays could be allowed for the _last_ field of a structure:
-```
-(type $flex-array (array i32))
-(type $file (struct (field i32) (field (type $flex-array))))
-```
-Such a structure is itself called *flexible*.
-This notion can be generalized recursively: flexible aggregates cannot be used as field or element types, except for the last field of a structure.
-
-Like a flexible array, allocating a flexible structure would require giving a dynamic length operand for its flexible tail array (which is a direct or indirect last field).
-
-
-### Type Structure
-
-With nesting and flexible aggregates, the type grammar generalizes as follows:
-```
-fix_field_type   ::=  <storage_type> | (mut <storage_type>) | <fix_data_type>
-flex_field_type  ::=  <flex_data_type>
-
-fix_data_type    ::=  (struct <fix_field_type>*) | (array <fix_field_type> <expr>)
-flex_data_type   ::=  (struct <fix_field_type>* <flex_field_type>) | (array <fix_field_type>)
-data_type        ::=  <fix_data_type> | <flex_data_type>
-```
-However, additional checks need to apply to (mutually) recursive type definitions in order to ensure well-foundedness of the recursion.
-For example,
-```
-(type $t (struct (type $t)))
-```
-is not valid.
-For example, well-foundedness can be ensured by requiring that the *nesting height* of any `data_type`, derivable by the following inductive definition, is finite:
-```
-|<storage_type>|               = 0
-|(mut <storage_type>)|         = 0
-|(struct <field_type>*)|       = 1 + max{|<field_type>|*}
-|(array <field_type> <expr>?)| = 1 + |<field_type>|
-```
-
-
 ## Possible Extension: Type Parameters and Fields
 
 TODO
@@ -925,21 +345,6 @@ type_field  ::=  (typefield $x <typeuse>?)
 
 def_type    ::=  ... | (typefunc $x <typeuse>? <def_type>)
 ```
-
-
-## Possible Extension: Variants
-
-Many language implementations use *pointer tagging* in one form or the other, in order to efficiently distinguish different classes of values or store additional information in pointer values without requiring extra space (e.g., Lisp or Prolog often introduce a special tag for cons cells).
-Other languages provide user-defined tags as an explicit language feature (e.g., variants or algebraic data types).
-
-Unfortunately, hardware differs in how many tagging bits a pointer can support, and different VMs might have additional constraints on how many of these bits they can make available to user code.
-In order to provide tagging in a way that is portable but maximally efficient on any given hardware, a somewhat higher level of abstraction is useful.
-
-Such a more high-level solution would be to support a form of sum types (a.k.a. variants a.k.a. disjoint unions) in the type system:
-in addition to structs and arrays, the type section could define variant types, which are also used as reference types.
-Additional instructions would allow constructing and inspecting variant references.
-It is left to the engine to pick an efficient representation for the required tags, and depending on the hardware's word size, the number of tags in a defined type, and other design decisions in the engine, these tags could either be stored as bits in the pointer, in a shared per-type data structure (hidden class), or in an explicit per-value slot within the heap object.
-These decisions can be made by the engine on a per-type basis; validation ensures that all uses are coherent.
 
 
 ## Possible Extension: Weak References and Finalisation
