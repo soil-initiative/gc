@@ -1,4 +1,4 @@
-# Rationale
+# Design Rationale
 
 Whereas the [Overview](Overview.md) provides motivations behind the *high-level* facets of the proposed design, this document provides motivations behind the *detailed* facets of the proposed design.
 This document is structured to mirror the [MVP](MVP.md) so that when a reader has a question about a particular detail in the MVP, they can look up the corresponding motivation of that detail in the matching section here.
@@ -112,6 +112,12 @@ This separation has no run-time impact, and its potential verbosity is addressed
 
 Arguably, every `scheme.new` scheme should have an instantiation attribute, otherwise there is no need for the scheme to exist.
 We elide that requirement for now simply because no other attribute is required and to emphasize that when schemes are imported or exported one should not need to import or export their instantiability, enabling a module to export a scheme while retaining guarantees that no other module can create instances of that scheme.
+
+Note that a reference to a `constructible` scheme can statically guarantee the size/layout of the referenced instance.
+If that scheme furthermore has no parent or is a `cases` child of its parent, then it is guaranteed that the engine can *always* know the size/layout of its instances.
+This means that the engine does not need to associate a header with its instances in order to walk them.
+Implementations of Lisp/Erlang/Prolog use this technique to permit cons cells to require only 2 words in the heap, rather than 3 words because of a gc-header, and the proposal enables engines to provide this optimization.
+One simply distinguishes the `constructible` `$cons` scheme as a `cases` child of the `$uniform` scheme for the language.
 
 ### Extensibility
 
@@ -288,15 +294,23 @@ The reason why `$field` is required is to be future-compatible with supporting m
 Many languages initialize values by first zeroing out a newly allocated block of memory and then initializing the fields one by one.
 `scheme.construct_default` is provided to support this pattern, with a slight tweak to support `immutable` fields (such as v-tables in Java objects).
 
-### Construct Copy
-
-Although `scheme.construct_copy` might provide better performance for some common patterns, we included it in the MVP as a means to construct instances of schemes *without* knowing all the fields of the scheme.
+We also included `scheme.construct_default` in the MVP as a means to construct instances of schemes *without* knowing all the fields of the scheme.
 In particular, a scheme might designate an imported scheme as its parent.
 This instruction would enable one to allocate instances of that scheme without knowing anything about the imported scheme.
 One pattern we are considering how to support is where some module is responsible solely for providing a language's runtime system, with wasm programs compiled from that language dynamically linking with that runtime module.
 This would help keep wasm programs small, make for faster loads due to the shared runtime in the cache, and facilitate the sharing of data between wasm programs compiled from the same language.
 One issue, though, is that the maintainer of the runtime needs to be able to make improvements without the programs being recompiled to wasm to support these improvements, so the question is how can we abstract as many details of the runtime module as possible.
 This instruction is one idea to that end.
+In particular, it would be useful for constructing objects of subclasses (besides their v-table, hence the ability to exclude certain fields) without knowing the fields of the superclasses.
+This reflects the implementation and semantics of constructors for various nominal OO languages.
+
+### Construct Copy
+
+`scheme.construct_copy` can provide better performance for some common patterns of data initialization.
+
+As with [`scheme.construct_default`](#construct-default), we included `scheme.construct_copy` in the MVP as a means to construct instances of schemes *without* knowing all the fields of the scheme, for reasons described above.
+This instruction is another idea to that end.
+In particular, it would be useful for constructing v-tables of subclasses without needing to know the full contents of the v-table of the superclass.
 
 On a more technical note, the reason that the instruction only copies `immutable` fields is to ensure that the order of reads and writes used to implement the copying is invisible even in a multithreaded setting.
 
