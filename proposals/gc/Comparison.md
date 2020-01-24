@@ -75,7 +75,7 @@ So relying on cons-hashing, caching, and speculation seems a risky venture for a
 
 Besides performance, structural casts are problematic for security.
 If a module exports an abstract type, a malicious/aggressive module can simply bypass the abstraction by casting values of that type to their expected structural type.
-Similarly, if a WASI provides a capability to a specific set of functions, a module can cast that capability to an expected larger set of functions, meaning that WASI cannot rely on types to narrow capabilities and instead must regularly dynamically allocate capabilities.
+Similarly, if WASI provides a capability to a specific set of functions, a module can cast that capability to an expected larger set of functions, meaning that WASI cannot rely on types to narrow capabilities and instead must regularly dynamically allocate capabilities.
 
 The new proposal, on the other hand, guarantees that all casts are efficiently implementable in constant time, and only permits casts between types that the module has both been given access to (through explicit exports) and been informed are related (again through explicit exports).
 
@@ -98,7 +98,7 @@ One might consider determining the encoding by using the names of the cases, but
 Nominality is actually *necessary* to provide semantic abstraction.
 
 The new proposal solves the abstraction problem by associating a unique *abstract* name with each case.
-It also still permits the packed `bool * char` representation by letting `Foo` and `Bar` each be  `explicit` children of the uniform representation (or of `anyref`) and by uses `cases` extensibility (from which the engine determines that a `bool` is sufficient to distinguish the possible cases).
+It also still permits the packed `bool * char` representation by letting `Foo` and `Bar` each be  `explicit` children of the uniform representation (or of `anyref`) and by using `cases` extensibility (from which the engine determines that a `bool` is sufficient to distinguish the possible cases).
 The values are only tagged with the specific abstract name of the case when they are converted into the uniform representation, and even then this tagged representation can likely be pointer-packed.
 
 # Schemes
@@ -123,7 +123,7 @@ One can even express `i31ref` via a packable `$i31` scheme that the engine can p
 ### Field Refinement
 
 The preexisting proposal has the ability to extend structures, corresponding to the new proposal's notion of automatic field inheritance.
-However, the preexisting does not support field refinement, forcing the schemes of classes (but not of class v-tables) to repeat the entire contents of their superclasses, and preventing classes from  extending superclasses defined in separate modules without knowing their entire contents.
+However, the preexisting proposal does not support field refinement, forcing the schemes of classes (but not of class v-tables) to repeat the entire contents of their superclasses, and preventing classes from  extending superclasses defined in separate modules without knowing their entire contents.
 
 ### Length
 
