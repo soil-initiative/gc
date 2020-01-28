@@ -152,7 +152,7 @@ And it introduces the `initializable` notion of mutability, as it was found usef
 
 In the preexisting proposal, subtyping of structs always permits prefix subtyping.
 This means that engines can never statically guarantee the size/layout of a referenced struct, forcing all structs to have a header dynamically informing the garbage collector how to walk it.
-The new proposal enables engines to guarantee that size/layout of instances of certain schemes can always be determined statically, enabling engines to omit headers in these cases, which implementations of Lisp/Erlang/Prolog have found useful for eliminating a third of space overhead for all cons cells.
+The new proposal enables engines to guarantee that size/layout of instances of certain schemes can always be determined statically, enabling engines to omit headers in these cases, which implementations of Lisp and Erlang have found useful for eliminating a third of space overhead for all cons cells.
 
 Similarly, the preexisting proposal permits all references to be cast, requiring all instances to allocate a casting header (though at least this can be combined with the required gc-header).
 
