@@ -101,6 +101,23 @@ The new proposal solves the abstraction problem by associating a unique *abstrac
 It also still permits the packed `bool * char` representation by letting `Foo` and `Bar` each be  `explicit` children of the uniform representation (or of `anyref`) and by using `cases` extensibility (from which the engine determines that a `bool` is sufficient to distinguish the possible cases).
 The values are only tagged with the specific abstract name of the case when they are converted into the uniform representation, and even then this tagged representation can likely be pointer-packed.
 
+## Looking Ahead
+
+Both of the proposals are *MVP* proposals; they are expected to be extended as WebAssembly grows and needs are better understood.
+And in both cases programs are expected to emit many casts that will never but for reasons the type systems' are too limited to recognize.
+It may be that these unnecessary casts prove to not significantly affect overhead, especially in the new proposal where these casts are always constant time.
+However, we may also discover that they do impose unwanted overhead, in which case we will want to extend the MVP with the necessary reasoning.
+At present we cannot know which path the future will bear, so we should consider how extensible the proposals are to this purpose.
+
+Prior research has found that constrained existential quantification or abstract members can eliminate most of these unnecessary casts.
+In the approach of the preexisting proposal, this new reasoning would likely be expressed using structurally bounded existential quantification or type members.
+This is concerning because both of these extensions are undecidable.
+Of course, there is a possibility that some restriction on these extensions is decidable and sufficiently expressive, but that is still an ongoing research problem.
+In the approach of the new proposal, this new reasoning would likely be expressed using nominally constrained existential quantification or type members.
+For example, schemes could be extended with nominal abstract members.
+Similar approaches have been explored in prior research on low-level type systems, and they have been found to be both decidable and sufficiently expressive; in fact, they have even been found to be intraprocedurally inferable, relieving most wasm generators and tools of the burden of managing these more complex types.
+In short, the new proposal has an established extension path for eliminating unnecessary casts, whereas extensions to the preexisting proposal seem likely to wander into known undecidability results.
+
 # Schemes
 
 In order to structure this document, here we go through the design of schemes and discuss the differences of their design and the impact of those differences.
